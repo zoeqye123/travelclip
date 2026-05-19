@@ -8,48 +8,36 @@
 import SwiftUI
 
 struct ContentView: View {
-    private let quickActions = [
-        QuickAction(title: "Map", icon: "map", tint: .terracotta),
-        QuickAction(title: "Journal", icon: "book.closed", tint: .leaf),
-        QuickAction(title: "Calendar", icon: "calendar", tint: .sky),
-        QuickAction(title: "Sticker", icon: "face.smiling", tint: .rose)
-    ]
-
     private let collageItems = [
-        CollageItem(title: "City Walk", subtitle: "photo notes", icon: "figure.walk", tint: .sky),
-        CollageItem(title: "Packing", subtitle: "trip list", icon: "shippingbox", tint: .sand),
-        CollageItem(title: "Photo Booth", subtitle: "memory strip", icon: "camera.viewfinder", tint: .rose)
+        CollageItem(title: "Kinkaku-ji", subtitle: "today", icon: "building.columns", tint: .sand),
+        CollageItem(title: "Nishiki Market", subtitle: "yesterday", icon: "cup.and.saucer.fill", tint: .sage),
+        CollageItem(title: "Photo Booth", subtitle: "memo strip", icon: "photo.on.rectangle", tint: .mist)
     ]
 
     private let notebooks = [
-        Notebook(title: "Tokyo Weekend", count: 18, tint: .leaf, symbol: "tram.fill"),
-        Notebook(title: "Coast Album", count: 9, tint: .sky, symbol: "sailboat.fill"),
-        Notebook(title: "Market Finds", count: 12, tint: .terracotta, symbol: "basket.fill"),
-        Notebook(title: "Dream Routes", count: 6, tint: .rose, symbol: "sparkles")
+        Notebook(title: "Cloud Notebook", count: 1, tint: .sage, symbol: "cloud.sun.fill"),
+        Notebook(title: "My Album", count: 0, tint: .sand, symbol: "photo.stack"),
+        Notebook(title: "Route Memo", count: 3, tint: .mist, symbol: "map.fill"),
+        Notebook(title: "Notes", count: 6, tint: .clay, symbol: "note.text")
     ]
 
     var body: some View {
-        ZStack(alignment: .bottom) {
+        ScrollView(showsIndicators: false) {
+            VStack(alignment: .leading, spacing: 22) {
+                HeaderView()
+                SearchCard()
+                CreateBanner()
+                NotebookSection(notebooks: notebooks)
+            }
+            .padding(.horizontal, 18)
+            .padding(.top, 8)
+            .padding(.bottom, 18)
+        }
+        .background(
             PaperBackground()
                 .ignoresSafeArea()
-
-            ScrollView(showsIndicators: false) {
-                VStack(alignment: .leading, spacing: 24) {
-                    HeaderView()
-
-                    QuickActionGrid(actions: quickActions)
-
-                    CreateBanner()
-
-                    CollageSection(items: collageItems)
-
-                    NotebookSection(notebooks: notebooks)
-                }
-                .padding(.horizontal, 20)
-                .padding(.top, 10)
-                .padding(.bottom, 112)
-            }
-
+        )
+        .safeAreaInset(edge: .bottom, spacing: 0) {
             BottomTabBar()
         }
     }
@@ -57,38 +45,111 @@ struct ContentView: View {
 
 private struct HeaderView: View {
     var body: some View {
-        HStack(spacing: 14) {
-            ZStack(alignment: .topTrailing) {
-                Circle()
-                    .fill(Color.paper)
-                    .frame(width: 42, height: 42)
-                    .overlay(
-                        Circle()
-                            .stroke(Color.lineSoft, lineWidth: 1.5)
-                    )
+        HStack(alignment: .top) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("TravelClip")
+                    .font(.system(size: 30, weight: .bold, design: .serif))
+                    .foregroundStyle(Color.ink)
 
-                Image(systemName: "paperplane.fill")
-                    .font(.system(size: 17, weight: .semibold))
-                    .foregroundStyle(Color.terracotta)
-
-                Text("NEW")
-                    .font(.system(size: 9, weight: .bold, design: .rounded))
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 2)
-                    .background(Capsule().fill(Color.rose))
-                    .offset(x: 20, y: -4)
+                HStack(spacing: 5) {
+                    Image(systemName: "mappin.and.ellipse")
+                        .font(.system(size: 11, weight: .semibold))
+                    Text("Kyoto, Japan")
+                    Text("· now")
+                        .foregroundStyle(Color.clay)
+                }
+                .font(.system(size: 13, weight: .medium, design: .rounded))
+                .foregroundStyle(Color.inkSoft)
             }
-            .frame(width: 48, height: 44)
-
-            Text("travelclip")
-                .font(.system(size: 24, weight: .semibold, design: .rounded))
-                .foregroundStyle(Color.ink)
 
             Spacer()
 
             HeaderButton(icon: "bell")
-            HeaderButton(icon: "gearshape")
+        }
+    }
+}
+
+private struct SearchCard: View {
+    var body: some View {
+        VStack(spacing: 12) {
+            HStack {
+                Image(systemName: "magnifyingglass")
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(Color.inkSoft)
+
+                Text("Search places...")
+                    .font(.system(size: 15, weight: .medium, design: .rounded))
+                    .foregroundStyle(Color.inkSoft)
+
+                Spacer()
+            }
+            .padding(.horizontal, 16)
+            .frame(height: 42)
+            .background(Color.paper)
+            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+
+            MapMock()
+                .frame(height: 168)
+        }
+        .padding(12)
+        .background(Color.panel)
+        .clipShape(RoundedRectangle(cornerRadius: 26, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 26, style: .continuous)
+                .stroke(Color.lineSoft, lineWidth: 1.5)
+        )
+    }
+}
+
+private struct MapMock: View {
+    var body: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .fill(
+                    LinearGradient(
+                        colors: [Color.panelDeep, Color.panel, Color.paper],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                )
+
+            Path { path in
+                path.move(to: CGPoint(x: 32, y: 30))
+                path.addLine(to: CGPoint(x: 52, y: 120))
+                path.addLine(to: CGPoint(x: 130, y: 126))
+                path.addLine(to: CGPoint(x: 185, y: 82))
+                path.move(to: CGPoint(x: 48, y: 34))
+                path.addLine(to: CGPoint(x: 150, y: 44))
+                path.addLine(to: CGPoint(x: 184, y: 136))
+                path.move(to: CGPoint(x: 88, y: 24))
+                path.addLine(to: CGPoint(x: 80, y: 102))
+            }
+            .stroke(Color.lineSoft.opacity(0.8), lineWidth: 1.1)
+
+            Circle()
+                .fill(Color.sage.opacity(0.18))
+                .frame(width: 50, height: 50)
+                .offset(x: -92, y: -38)
+
+            Circle()
+                .fill(Color.clay.opacity(0.16))
+                .frame(width: 58, height: 58)
+                .offset(x: 96, y: 56)
+
+            VStack(spacing: 3) {
+                Image(systemName: "mappin.circle.fill")
+                    .font(.system(size: 28, weight: .semibold))
+                    .foregroundStyle(Color.clay)
+
+                Text("You are here")
+                    .font(.system(size: 13, weight: .semibold, design: .rounded))
+                    .foregroundStyle(Color.ink)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 5)
+                    .background(Color.paper)
+                    .clipShape(Capsule())
+                    .shadow(color: Color.shadowSoft, radius: 4, x: 0, y: 2)
+            }
         }
     }
 }
@@ -100,53 +161,15 @@ private struct HeaderButton: View {
         Button {
         } label: {
             Image(systemName: icon)
-                .font(.system(size: 21, weight: .semibold))
+                .font(.system(size: 19, weight: .regular))
                 .foregroundStyle(Color.ink)
-                .frame(width: 42, height: 42)
+                .frame(width: 38, height: 38)
+                .background(Color.paper)
+                .clipShape(Circle())
+                .overlay(Circle().stroke(Color.lineSoft, lineWidth: 1.3))
         }
         .buttonStyle(.plain)
         .accessibilityLabel(Text(icon))
-    }
-}
-
-private struct QuickActionGrid: View {
-    let actions: [QuickAction]
-
-    var body: some View {
-        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 12), count: 4), spacing: 12) {
-            ForEach(actions) { action in
-                Button {
-                } label: {
-                    VStack(alignment: .leading, spacing: 16) {
-                        Text(action.title)
-                            .font(.system(size: 15, weight: .semibold, design: .rounded))
-                            .foregroundStyle(Color.ink)
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.72)
-
-                        HStack {
-                            Spacer()
-                            Image(systemName: action.icon)
-                                .font(.system(size: 25, weight: .semibold))
-                                .foregroundStyle(action.tint)
-                        }
-                    }
-                    .padding(14)
-                    .frame(height: 86)
-                    .frame(maxWidth: .infinity)
-                    .background(
-                        RoundedRectangle(cornerRadius: 16, style: .continuous)
-                            .fill(Color.paper)
-                            .shadow(color: Color.ink.opacity(0.05), radius: 10, x: 0, y: 5)
-                    )
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 16, style: .continuous)
-                            .stroke(Color.lineSoft, lineWidth: 1.5)
-                    )
-                }
-                .buttonStyle(.plain)
-            }
-        }
     }
 }
 
@@ -155,58 +178,56 @@ private struct CreateBanner: View {
         HStack(spacing: 10) {
             Button {
             } label: {
-                HStack(spacing: 14) {
-                    TravelStamp()
-
+                HStack(spacing: 12) {
                     Image(systemName: "plus.circle.fill")
-                        .font(.system(size: 27, weight: .semibold))
-                        .foregroundStyle(Color.terracotta)
+                        .font(.system(size: 34, weight: .semibold))
+                        .foregroundStyle(Color.clay)
 
-                    Text("Start Creating")
-                        .font(.system(size: 24, weight: .semibold, design: .rounded))
+                    Text("Start creating")
+                        .font(.system(size: 22, weight: .medium, design: .serif))
                         .foregroundStyle(Color.ink)
                         .lineLimit(1)
-                        .minimumScaleFactor(0.68)
+                        .minimumScaleFactor(0.7)
 
                     Spacer(minLength: 0)
                 }
                 .padding(.horizontal, 18)
-                .frame(height: 106)
+                .frame(height: 108)
                 .frame(maxWidth: .infinity)
-                .background(Color.noteYellow)
-                .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
-                .overlay(DashedRoundedBorder(radius: 17, color: .mustard, lineWidth: 2))
+                .background(Color.banner)
+                .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+                .overlay(DashedRoundedBorder(radius: 20, color: .lineSoft, lineWidth: 1.6))
             }
             .buttonStyle(.plain)
 
             Button {
             } label: {
-                VStack(spacing: 11) {
-                    Image(systemName: "list.clipboard")
-                        .font(.system(size: 26, weight: .semibold))
-                        .foregroundStyle(Color.terracotta)
+                VStack(spacing: 8) {
+                    Image(systemName: "doc.text")
+                        .font(.system(size: 24, weight: .semibold))
+                        .foregroundStyle(Color.clay)
 
                     Text("Template")
-                        .font(.system(size: 18, weight: .semibold, design: .rounded))
+                        .font(.system(size: 17, weight: .medium, design: .rounded))
                         .foregroundStyle(Color.ink)
                         .lineLimit(1)
                         .minimumScaleFactor(0.7)
                 }
-                .frame(width: 104, height: 106)
-                .background(Color.noteYellow)
-                .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
-                .overlay(DashedRoundedBorder(radius: 17, color: .mustard, lineWidth: 2))
+                .frame(width: 110, height: 108)
+                .background(Color.banner)
+                .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+                .overlay(DashedRoundedBorder(radius: 20, color: .lineSoft, lineWidth: 1.6))
             }
             .buttonStyle(.plain)
         }
         .padding(7)
         .background(
-            RoundedRectangle(cornerRadius: 23, style: .continuous)
-                .fill(Color.noteYellow.opacity(0.7))
+            RoundedRectangle(cornerRadius: 24, style: .continuous)
+                .fill(Color.bannerSoft)
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 23, style: .continuous)
-                .stroke(Color.mustard, lineWidth: 2)
+            RoundedRectangle(cornerRadius: 24, style: .continuous)
+                .stroke(Color.lineSoft, lineWidth: 1.5)
         )
     }
 }
@@ -216,8 +237,16 @@ private struct CollageSection: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text("Fun Collage")
-                .sectionTitle()
+            HStack {
+                Text("Recent Journals")
+                    .sectionTitle()
+
+                Spacer()
+
+                Text("See all")
+                    .font(.system(size: 13, weight: .medium, design: .rounded))
+                    .foregroundStyle(Color.sage)
+            }
 
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 14) {
@@ -225,7 +254,7 @@ private struct CollageSection: View {
                         CollageCard(item: item)
                     }
                 }
-                .padding(.horizontal, 2)
+                .padding(.horizontal, 3)
                 .padding(.bottom, 4)
             }
         }
@@ -240,21 +269,20 @@ private struct CollageCard: View {
         } label: {
             VStack(spacing: 0) {
                 ZStack {
-                    RoundedRectangle(cornerRadius: 13, style: .continuous)
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
                         .fill(item.tint.opacity(0.18))
 
                     Image(systemName: item.icon)
-                        .font(.system(size: 38, weight: .semibold))
+                        .font(.system(size: 34, weight: .medium))
                         .foregroundStyle(item.tint)
                 }
-                .frame(height: 72)
+                .frame(height: 96)
 
-                VStack(spacing: 1) {
+                VStack(alignment: .leading, spacing: 6) {
                     Text(item.title)
-                        .font(.system(size: 16, weight: .semibold, design: .rounded))
+                        .font(.system(size: 15, weight: .medium, design: .serif))
                         .foregroundStyle(Color.ink)
                         .lineLimit(1)
-                        .minimumScaleFactor(0.72)
 
                     Text(item.subtitle)
                         .font(.system(size: 11, weight: .medium, design: .rounded))
@@ -262,17 +290,17 @@ private struct CollageCard: View {
                         .lineLimit(1)
                 }
                 .padding(.horizontal, 10)
-                .frame(height: 42)
-                .frame(maxWidth: .infinity)
-                .background(Color.paper.opacity(0.92))
+                .padding(.vertical, 10)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(Color.paper)
             }
-            .frame(width: 148, height: 116)
-            .clipShape(RoundedRectangle(cornerRadius: 17, style: .continuous))
+            .frame(width: 156, height: 148)
+            .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
             .overlay(
-                RoundedRectangle(cornerRadius: 17, style: .continuous)
-                    .stroke(item.tint.opacity(0.5), lineWidth: 2)
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .stroke(item.tint.opacity(0.33), lineWidth: 1.4)
             )
-            .shadow(color: Color.ink.opacity(0.04), radius: 10, x: 0, y: 5)
+            .shadow(color: Color.shadowSoft, radius: 7, x: 0, y: 4)
         }
         .buttonStyle(.plain)
     }
@@ -296,23 +324,25 @@ private struct NotebookSection: View {
                 Button {
                 } label: {
                     Image(systemName: "arrow.up.arrow.down")
-                        .font(.system(size: 16, weight: .bold))
+                        .font(.system(size: 14, weight: .semibold))
                         .foregroundStyle(Color.inkSoft)
-                        .frame(width: 42, height: 36)
-                        .background(Capsule().fill(Color.paper))
-                        .overlay(Capsule().stroke(Color.lineSoft, lineWidth: 1.5))
+                        .frame(width: 38, height: 34)
+                        .background(Color.paper)
+                        .clipShape(Capsule())
+                        .overlay(Capsule().stroke(Color.lineSoft, lineWidth: 1.2))
                 }
                 .buttonStyle(.plain)
 
                 Button {
                 } label: {
                     Label("New Group", systemImage: "plus")
-                        .font(.system(size: 15, weight: .semibold, design: .rounded))
+                        .font(.system(size: 14, weight: .medium, design: .rounded))
                         .foregroundStyle(Color.inkSoft)
-                        .padding(.horizontal, 15)
-                        .frame(height: 36)
-                        .background(Capsule().fill(Color.paper))
-                        .overlay(Capsule().stroke(Color.lineSoft, lineWidth: 1.5))
+                        .padding(.horizontal, 14)
+                        .frame(height: 34)
+                        .background(Color.paper)
+                        .clipShape(Capsule())
+                        .overlay(Capsule().stroke(Color.lineSoft, lineWidth: 1.2))
                 }
                 .buttonStyle(.plain)
             }
@@ -332,90 +362,155 @@ private struct NotebookCard: View {
     var body: some View {
         Button {
         } label: {
-            VStack(spacing: 0) {
-                ZStack(alignment: .topTrailing) {
-                    ScrapbookCover(notebook: notebook)
-                        .frame(height: 154)
+            ZStack(alignment: .bottom) {
+                NotebookCover(notebook: notebook)
 
-                    TicketStub()
-                        .offset(x: 12, y: 80)
-                }
-
-                HStack(alignment: .center, spacing: 8) {
-                    VStack(alignment: .leading, spacing: 5) {
+                HStack(spacing: 8) {
+                    VStack(alignment: .leading, spacing: 4) {
                         Text(notebook.title)
-                            .font(.system(size: 18, weight: .semibold, design: .rounded))
+                            .font(.system(size: 16, weight: .medium, design: .serif))
                             .foregroundStyle(Color.ink)
                             .lineLimit(1)
-                            .minimumScaleFactor(0.66)
+                            .minimumScaleFactor(0.7)
 
                         Text("Note Number: \(notebook.count)")
-                            .font(.system(size: 13, weight: .medium, design: .rounded))
+                            .font(.system(size: 12, weight: .medium, design: .rounded))
                             .foregroundStyle(Color.inkSoft)
-                            .lineLimit(1)
                     }
 
-                    Spacer(minLength: 2)
+                    Spacer(minLength: 4)
 
                     Image(systemName: "square.and.pencil")
-                        .font(.system(size: 19, weight: .semibold))
+                        .font(.system(size: 17, weight: .semibold))
                         .foregroundStyle(Color.inkSoft)
                 }
-                .padding(12)
-                .frame(height: 70)
-                .background(Color.paper)
-                .overlay(DashedRoundedBorder(radius: 11, color: .lineStrong, lineWidth: 1.8))
+                .padding(.horizontal, 11)
+                .padding(.vertical, 9)
+                .background(Color.paper.opacity(0.95))
+                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .overlay(DashedRoundedBorder(radius: 10, color: .lineStrong, lineWidth: 1.4))
+                .padding(10)
             }
-            .background(Color.paper)
-            .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .aspectRatio(3 / 4, contentMode: .fit)
+            .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
             .overlay(
-                RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    .stroke(Color.lineSoft, lineWidth: 1.5)
+                RoundedRectangle(cornerRadius: 20, style: .continuous)
+                    .stroke(Color.lineSoft, lineWidth: 1.4)
             )
-            .shadow(color: Color.ink.opacity(0.08), radius: 10, x: 1, y: 7)
+            .shadow(color: Color.shadow, radius: 10, x: 0, y: 5)
         }
         .buttonStyle(.plain)
     }
 }
 
+private struct NotebookCover: View {
+    let notebook: Notebook
+
+    var body: some View {
+        ZStack(alignment: .leading) {
+            LinearGradient(
+                colors: [
+                    notebook.tint.opacity(0.28),
+                    Color.banner.opacity(0.78),
+                    Color.paper
+                ],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+
+            Rectangle()
+                .fill(Color.ink.opacity(0.08))
+                .frame(width: 16)
+                .overlay(
+                    Rectangle()
+                        .fill(Color.paper.opacity(0.45))
+                        .frame(width: 3)
+                        .offset(x: 5)
+                )
+
+            ForEach(0..<4) { index in
+                Circle()
+                    .fill(Color.paper.opacity(0.62))
+                    .frame(width: 8, height: 8)
+                    .offset(x: 4, y: CGFloat(-48 + index * 30))
+            }
+
+            ZStack {
+                ForEach(0..<7) { index in
+                    Image(systemName: ["sparkle", "heart.fill", "leaf.fill", "circle.fill"][index % 4])
+                        .font(.system(size: CGFloat(10 + (index % 3) * 4), weight: .medium))
+                        .foregroundStyle([Color.rose, Color.sage, Color.sand, Color.mist][index % 4].opacity(0.6))
+                        .offset(
+                            x: CGFloat([-54, 42, 70, -22, 18, -70, 56][index]),
+                            y: CGFloat([-38, -46, 6, 22, -8, 42, 48][index])
+                        )
+                }
+
+                Image(systemName: notebook.symbol)
+                    .font(.system(size: 42, weight: .medium))
+                    .foregroundStyle(notebook.tint)
+                    .frame(width: 84, height: 84)
+                    .background(Circle().fill(Color.paper.opacity(0.72)))
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .padding(.leading, 16)
+        }
+    }
+}
+
 private struct BottomTabBar: View {
     private let tabs = [
-        TabItem(title: "Home", icon: "house.fill", selected: true),
+        TabItem(title: "Home", icon: "house", selected: true),
         TabItem(title: "Store", icon: "storefront", selected: false),
-        TabItem(title: "Trips", icon: "globe.asia.australia", selected: false),
-        TabItem(title: "Me", icon: "person.crop.circle", selected: false)
+        TabItem(title: "Universe", icon: "globe.asia.australia", selected: false),
+        TabItem(title: "My", icon: "face.smiling", selected: false)
     ]
 
     var body: some View {
-        HStack {
+        HStack(spacing: 8) {
             ForEach(tabs) { tab in
                 Button {
                 } label: {
                     VStack(spacing: 6) {
-                        Image(systemName: tab.icon)
-                            .font(.system(size: 22, weight: .semibold))
-                            .foregroundStyle(tab.selected ? Color.ink : Color.inkSoft)
+                        ZStack {
+                            if tab.selected {
+                                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                    .fill(Color.tabShadow)
+                                    .frame(width: 28, height: 28)
+                                    .offset(x: 4, y: 4)
+                            }
+
+                            Image(systemName: tab.icon)
+                                .font(.system(size: 26, weight: .semibold))
+                                .symbolRenderingMode(.monochrome)
+                                .foregroundStyle(tab.selected ? Color.ink : Color.tabIcon)
+                                .frame(width: 34, height: 32)
+                        }
 
                         Text(tab.title)
-                            .font(.system(size: 13, weight: .semibold, design: .rounded))
-                            .foregroundStyle(tab.selected ? Color.ink : Color.inkSoft)
+                            .font(.system(size: 15, weight: .medium, design: .rounded))
+                            .foregroundStyle(tab.selected ? Color.ink : Color.tabIcon)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.78)
                     }
                     .frame(maxWidth: .infinity)
-                    .frame(height: 60)
+                    .frame(height: 68)
                 }
                 .buttonStyle(.plain)
             }
         }
-        .padding(.horizontal, 18)
+        .padding(.horizontal, 28)
         .padding(.top, 10)
-        .padding(.bottom, 18)
+        .padding(.bottom, 0)
+        .frame(maxWidth: .infinity)
         .background(
-            UnevenRoundedRectangle(topLeadingRadius: 24, bottomLeadingRadius: 0, bottomTrailingRadius: 0, topTrailingRadius: 24)
-                .fill(.ultraThinMaterial)
+            UnevenRoundedRectangle(topLeadingRadius: 26, bottomLeadingRadius: 0, bottomTrailingRadius: 0, topTrailingRadius: 26)
+                .fill(Color.paper.opacity(0.98))
                 .overlay(
-                    UnevenRoundedRectangle(topLeadingRadius: 24, bottomLeadingRadius: 0, bottomTrailingRadius: 0, topTrailingRadius: 24)
-                        .stroke(Color.lineSoft, lineWidth: 1.5)
+                    UnevenRoundedRectangle(topLeadingRadius: 26, bottomLeadingRadius: 0, bottomTrailingRadius: 0, topTrailingRadius: 26)
+                        .stroke(Color.tabBorder, lineWidth: 2)
                 )
+                .shadow(color: Color.shadowSoft, radius: 10, x: 0, y: -2)
         )
     }
 }
@@ -462,7 +557,7 @@ private struct DashedRoundedBorder: View {
 
     var body: some View {
         RoundedRectangle(cornerRadius: radius, style: .continuous)
-            .stroke(color, style: StrokeStyle(lineWidth: lineWidth, lineCap: .round, dash: [7, 6]))
+            .stroke(color, style: StrokeStyle(lineWidth: lineWidth, lineCap: .round, dash: [8, 6]))
             .padding(8)
     }
 }
@@ -471,12 +566,12 @@ private struct TravelStamp: View {
     var body: some View {
         ZStack {
             Circle()
-                .fill(Color.rose.opacity(0.16))
-                .frame(width: 58, height: 58)
+                .fill(Color.rose.opacity(0.12))
+                .frame(width: 52, height: 52)
 
             Image(systemName: "airplane.departure")
-                .font(.system(size: 24, weight: .semibold))
-                .foregroundStyle(Color.terracotta)
+                .font(.system(size: 22, weight: .semibold))
+                .foregroundStyle(Color.clay)
                 .rotationEffect(.degrees(-8))
         }
     }
@@ -489,24 +584,24 @@ private struct ScrapbookCover: View {
         ZStack {
             LinearGradient(
                 colors: [
-                    notebook.tint.opacity(0.35),
-                    Color.noteYellow.opacity(0.7),
+                    notebook.tint.opacity(0.22),
+                    Color.panelDeep.opacity(0.6),
                     Color.paper
                 ],
                 startPoint: .topLeading,
                 endPoint: .bottomTrailing
             )
 
-            ForEach(0..<5) { index in
+            ForEach(0..<4) { index in
                 Circle()
-                    .fill(Color.paper.opacity(0.55))
-                    .frame(width: CGFloat(18 + index * 8), height: CGFloat(18 + index * 8))
-                    .position(x: CGFloat(28 + index * 31), y: CGFloat(24 + (index % 2) * 78))
+                    .fill(Color.paper.opacity(0.5))
+                    .frame(width: CGFloat(20 + index * 9), height: CGFloat(20 + index * 9))
+                    .position(x: CGFloat(34 + index * 34), y: CGFloat(26 + (index % 2) * 74))
             }
 
             VStack(spacing: 10) {
                 Image(systemName: notebook.symbol)
-                    .font(.system(size: 37, weight: .semibold))
+                    .font(.system(size: 37, weight: .medium))
                     .foregroundStyle(notebook.tint)
                     .frame(width: 76, height: 76)
                     .background(
@@ -515,37 +610,11 @@ private struct ScrapbookCover: View {
                     )
 
                 Text("travel clip")
-                    .font(.system(size: 16, weight: .bold, design: .rounded))
+                    .font(.system(size: 16, weight: .medium, design: .serif))
                     .foregroundStyle(notebook.tint.opacity(0.88))
             }
         }
     }
-}
-
-private struct TicketStub: View {
-    var body: some View {
-        RoundedRectangle(cornerRadius: 9, style: .continuous)
-            .fill(Color.paper.opacity(0.9))
-            .frame(width: 78, height: 42)
-            .overlay(
-                RoundedRectangle(cornerRadius: 9, style: .continuous)
-                    .stroke(Color.lineStrong, style: StrokeStyle(lineWidth: 1.5, dash: [6, 5]))
-            )
-            .overlay(
-                Image(systemName: "circle.dashed")
-                    .font(.system(size: 24, weight: .semibold))
-                    .foregroundStyle(Color.lineStrong)
-                    .offset(x: -18)
-            )
-            .shadow(color: Color.ink.opacity(0.06), radius: 5, x: 1, y: 3)
-    }
-}
-
-private struct QuickAction: Identifiable {
-    let id = UUID()
-    let title: String
-    let icon: String
-    let tint: Color
 }
 
 private struct CollageItem: Identifiable {
@@ -574,26 +643,33 @@ private struct TabItem: Identifiable {
 private extension Text {
     func sectionTitle() -> some View {
         self
-            .font(.system(size: 28, weight: .semibold, design: .rounded))
+            .font(.system(size: 24, weight: .bold, design: .serif))
             .foregroundStyle(Color.ink)
     }
 }
 
 private extension Color {
-    static let background = Color(red: 0.985, green: 0.973, blue: 0.948)
-    static let paper = Color(red: 1.0, green: 0.992, blue: 0.965)
-    static let noteYellow = Color(red: 1.0, green: 0.929, blue: 0.667)
-    static let ink = Color(red: 0.16, green: 0.135, blue: 0.115)
-    static let inkSoft = Color(red: 0.55, green: 0.52, blue: 0.48)
-    static let gridLine = Color(red: 0.79, green: 0.75, blue: 0.68).opacity(0.26)
-    static let lineSoft = Color(red: 0.82, green: 0.72, blue: 0.59).opacity(0.5)
+    static let background = Color(red: 0.968, green: 0.956, blue: 0.932)
+    static let paper = Color(red: 0.992, green: 0.984, blue: 0.962)
+    static let panel = Color(red: 0.981, green: 0.971, blue: 0.944)
+    static let panelDeep = Color(red: 0.905, green: 0.867, blue: 0.785)
+    static let banner = Color(red: 0.990, green: 0.962, blue: 0.860)
+    static let bannerSoft = Color(red: 0.973, green: 0.946, blue: 0.895)
+    static let ink = Color(red: 0.18, green: 0.16, blue: 0.14)
+    static let inkSoft = Color(red: 0.56, green: 0.54, blue: 0.50)
+    static let tabIcon = Color(red: 0.54, green: 0.52, blue: 0.50)
+    static let tabShadow = Color(red: 0.94, green: 0.84, blue: 0.72)
+    static let tabBorder = Color(red: 0.92, green: 0.82, blue: 0.70)
+    static let gridLine = Color(red: 0.79, green: 0.75, blue: 0.69).opacity(0.18)
+    static let lineSoft = Color(red: 0.86, green: 0.80, blue: 0.73).opacity(0.9)
     static let lineStrong = Color(red: 0.64, green: 0.61, blue: 0.56).opacity(0.65)
-    static let mustard = Color(red: 0.77, green: 0.50, blue: 0.21)
-    static let terracotta = Color(red: 0.67, green: 0.36, blue: 0.25)
-    static let leaf = Color(red: 0.42, green: 0.62, blue: 0.45)
-    static let sky = Color(red: 0.32, green: 0.59, blue: 0.74)
-    static let rose = Color(red: 0.86, green: 0.43, blue: 0.49)
-    static let sand = Color(red: 0.78, green: 0.62, blue: 0.40)
+    static let clay = Color(red: 0.69, green: 0.46, blue: 0.38)
+    static let sage = Color(red: 0.48, green: 0.63, blue: 0.55)
+    static let mist = Color(red: 0.68, green: 0.76, blue: 0.83)
+    static let sand = Color(red: 0.82, green: 0.72, blue: 0.58)
+    static let rose = Color(red: 0.86, green: 0.65, blue: 0.67)
+    static let shadow = Color(red: 0.56, green: 0.49, blue: 0.42).opacity(0.12)
+    static let shadowSoft = Color(red: 0.56, green: 0.49, blue: 0.42).opacity(0.07)
 }
 
 #Preview {
