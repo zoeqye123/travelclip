@@ -22,24 +22,25 @@ struct ContentView: View {
     ]
 
     var body: some View {
-        ScrollView(showsIndicators: false) {
-            VStack(alignment: .leading, spacing: 22) {
-                HeaderView()
-                SearchCard()
-                CreateBanner()
-                NotebookSection(notebooks: notebooks)
+        ZStack(alignment: .bottom) {
+            ScrollView(showsIndicators: false) {
+                VStack(alignment: .leading, spacing: 22) {
+                    HeaderView()
+                    SearchCard()
+                    CreateBanner()
+                    NotebookSection(notebooks: notebooks)
+                }
+                .padding(.horizontal, 18)
+                .padding(.top, 8)
+                .padding(.bottom, 116)
             }
-            .padding(.horizontal, 18)
-            .padding(.top, 8)
-            .padding(.bottom, 18)
+
+            BottomTabBar()
         }
         .background(
             PaperBackground()
                 .ignoresSafeArea()
         )
-        .safeAreaInset(edge: .bottom, spacing: 0) {
-            BottomTabBar()
-        }
     }
 }
 
@@ -467,51 +468,56 @@ private struct BottomTabBar: View {
     ]
 
     var body: some View {
-        HStack(spacing: 8) {
-            ForEach(tabs) { tab in
-                Button {
-                } label: {
-                    VStack(spacing: 6) {
-                        ZStack {
-                            if tab.selected {
-                                RoundedRectangle(cornerRadius: 6, style: .continuous)
-                                    .fill(Color.tabShadow)
-                                    .frame(width: 28, height: 28)
-                                    .offset(x: 4, y: 4)
-                            }
-
-                            Image(systemName: tab.icon)
-                                .font(.system(size: 26, weight: .semibold))
-                                .symbolRenderingMode(.monochrome)
-                                .foregroundStyle(tab.selected ? Color.ink : Color.tabIcon)
-                                .frame(width: 34, height: 32)
-                        }
-
-                        Text(tab.title)
-                            .font(.system(size: 15, weight: .medium, design: .rounded))
-                            .foregroundStyle(tab.selected ? Color.ink : Color.tabIcon)
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.78)
-                    }
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 68)
-                }
-                .buttonStyle(.plain)
-            }
-        }
-        .padding(.horizontal, 28)
-        .padding(.top, 10)
-        .padding(.bottom, 0)
-        .frame(maxWidth: .infinity)
-        .background(
-            UnevenRoundedRectangle(topLeadingRadius: 26, bottomLeadingRadius: 0, bottomTrailingRadius: 0, topTrailingRadius: 26)
-                .fill(Color.paper.opacity(0.98))
+        ZStack(alignment: .top) {
+            RoundedRectangle(cornerRadius: 26, style: .continuous)
+                .fill(Color.paper)
                 .overlay(
-                    UnevenRoundedRectangle(topLeadingRadius: 26, bottomLeadingRadius: 0, bottomTrailingRadius: 0, topTrailingRadius: 26)
+                    RoundedRectangle(cornerRadius: 26, style: .continuous)
                         .stroke(Color.tabBorder, lineWidth: 2)
                 )
                 .shadow(color: Color.shadowSoft, radius: 10, x: 0, y: -2)
-        )
+                .frame(height: 96)
+                .offset(y: 20)
+
+            HStack(spacing: 8) {
+                ForEach(tabs) { tab in
+                    Button {
+                    } label: {
+                        VStack(spacing: 6) {
+                            ZStack {
+                                if tab.selected {
+                                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                        .fill(Color.tabShadow)
+                                        .frame(width: 28, height: 28)
+                                        .offset(x: 4, y: 4)
+                                }
+
+                                Image(systemName: tab.icon)
+                                    .font(.system(size: 26, weight: .semibold))
+                                    .symbolRenderingMode(.monochrome)
+                                    .foregroundStyle(tab.selected ? Color.ink : Color.tabIcon)
+                                    .frame(width: 34, height: 32)
+                            }
+
+                            Text(tab.title)
+                                .font(.system(size: 15, weight: .medium, design: .rounded))
+                                .foregroundStyle(tab.selected ? Color.ink : Color.tabIcon)
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.78)
+                        }
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 58)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(.horizontal, 28)
+            .padding(.top, 23)
+        }
+        .frame(maxWidth: .infinity)
+        .frame(height: 76)
+        .offset(y: 30)
+        .ignoresSafeArea(edges: .bottom)
     }
 }
 
