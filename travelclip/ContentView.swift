@@ -335,7 +335,7 @@ private struct NotebookSection: View {
 
                 Button {
                 } label: {
-                    Label("New Group", systemImage: "plus")
+                    Label("New Book", systemImage: "plus")
                         .font(.system(size: 14, weight: .medium, design: .rounded))
                         .foregroundStyle(Color.inkSoft)
                         .padding(.horizontal, 14)
