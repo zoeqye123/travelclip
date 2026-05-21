@@ -44,8 +44,8 @@ struct CanvasDocument: Codable {
 
 struct CanvasBackground: Codable {
     var id = UUID()
-    var colorA = "#FDF7EA"
-    var colorB = "#E8F1ED"
+    var colorA = "#FFFFFF"
+    var colorB = "#FFFFFF"
     var mode = "fill"
 
     var gradient: LinearGradient {
@@ -79,6 +79,9 @@ enum CanvasElementKind: String, Codable {
     case image
     case sticker
     case text
+    case tape
+    case brush
+    case wordArt
 }
 
 struct CodableSize: Codable {

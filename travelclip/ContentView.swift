@@ -286,8 +286,11 @@ private struct CanvasEditorView: View {
     @ObservedObject var repository: NotebookRepository
     let pageID: UUID
     @State private var draftText = ""
+    @State private var textMode: TextInsertMode = .normal
     @State private var showingTextSheet = false
     @State private var selectedPhoto: PhotosPickerItem?
+    @State private var activePanel: EditorPanel = .multi
+    @Environment(\.dismiss) private var dismiss
 
     private var page: JournalPage? {
         repository.page(id: pageID)
@@ -295,70 +298,131 @@ private struct CanvasEditorView: View {
 
     var body: some View {
         ZStack {
-            Color.editorChrome.ignoresSafeArea()
+            Color.editorPeach.ignoresSafeArea()
 
             VStack(spacing: 0) {
-                EditorTopBar(title: page?.title ?? "Canvas") {
-                    repository.updateBackground(for: pageID)
-                }
+                EditorTopBar(
+                    canUndo: repository.canUndo(pageID: pageID),
+                    canRedo: repository.canRedo(pageID: pageID),
+                    activePanel: activePanel,
+                    onBack: { dismiss() },
+                    onUndo: { repository.undo(pageID: pageID) },
+                    onRedo: { repository.redo(pageID: pageID) },
+                    onLayer: { activePanel = .layer },
+                    onMulti: { activePanel = .multi },
+                    onMore: { activePanel = .more },
+                    onDone: { repository.commitPage(pageID) }
+                )
 
-                ScrollView([.horizontal, .vertical], showsIndicators: false) {
-                    if let document = page?.canvasDocument {
-                        CanvasWorkspace(
-                            document: document,
+                GeometryReader { proxy in
+                    let panelHeight: CGFloat = 132
+                    let canvasHeight = max(0, proxy.size.height - panelHeight)
+
+                    VStack(spacing: 0) {
+                        if let document = page?.canvasDocument {
+                            CanvasWorkspace(
+                                document: document,
+                                selectedElementID: repository.selectedElementID,
+                                availableSize: CGSize(width: proxy.size.width, height: canvasHeight),
+                                onSelect: { repository.selectedElementID = $0 },
+                                onMoveStart: { repository.beginUndoGroup(for: pageID) },
+                                onMove: { elementID, position in
+                                    repository.moveElement(elementID, on: pageID, to: position)
+                                },
+                                onCommit: {
+                                    repository.commitPage(pageID)
+                                },
+                                onDelete: { elementID in
+                                    repository.deleteElement(elementID, from: pageID)
+                                },
+                                onScale: { elementID, factor in
+                                    repository.beginUndoGroup(for: pageID)
+                                    repository.scaleElement(elementID, on: pageID, by: factor)
+                                },
+                                onRotate: { elementID, degrees in
+                                    repository.beginUndoGroup(for: pageID)
+                                    repository.rotateElement(elementID, on: pageID, by: degrees)
+                                },
+                                onTransform: { elementID, scale, rotation in
+                                    repository.transformElement(elementID, on: pageID, scale: scale, rotation: rotation)
+                                }
+                            )
+                            .frame(width: proxy.size.width, height: canvasHeight)
+                        } else {
+                            Color.clear
+                                .frame(width: proxy.size.width, height: canvasHeight)
+                        }
+
+                        EditorToolPanel(
+                            activePanel: activePanel,
                             selectedElementID: repository.selectedElementID,
-                            onSelect: { repository.selectedElementID = $0 },
-                            onMove: { elementID, position in
-                                repository.moveElement(elementID, on: pageID, to: position)
+                            onTemplate: { repository.applyTemplate(to: pageID) },
+                            onText: {
+                                textMode = .normal
+                                draftText = ""
+                                showingTextSheet = true
                             },
-                            onCommit: {
-                                repository.commitPage(pageID)
+                            onWordArt: {
+                                textMode = .wordArt
+                                draftText = ""
+                                showingTextSheet = true
                             },
-                            onDelete: { elementID in
-                                repository.deleteElement(elementID, from: pageID)
+                            onEffect: { repository.addEffect(to: pageID) },
+                            onSticker: { repository.addSticker(to: pageID) },
+                            onBackground: { repository.updateBackground(for: pageID) },
+                            onTape: { repository.addTape(to: pageID) },
+                            onBrush: { repository.addBrushStroke(to: pageID) },
+                            onDelete: {
+                                if let selectedID = repository.selectedElementID {
+                                    repository.deleteElement(selectedID, from: pageID)
+                                }
                             },
-                            onScale: { elementID, factor in
-                                repository.scaleElement(elementID, on: pageID, by: factor)
+                            onBringForward: {
+                                if let selectedID = repository.selectedElementID {
+                                    repository.bringForward(selectedID, on: pageID)
+                                }
                             },
-                            onRotate: { elementID, degrees in
-                                repository.rotateElement(elementID, on: pageID, by: degrees)
+                            onSendBackward: {
+                                if let selectedID = repository.selectedElementID {
+                                    repository.sendBackward(selectedID, on: pageID)
+                                }
+                            },
+                            onBringToFront: {
+                                if let selectedID = repository.selectedElementID {
+                                    repository.bringToFront(selectedID, on: pageID)
+                                }
+                            },
+                            onSendToBack: {
+                                if let selectedID = repository.selectedElementID {
+                                    repository.sendToBack(selectedID, on: pageID)
+                                }
+                            },
+                            photoPicker: {
+                                PhotosPicker(selection: $selectedPhoto, matching: .images) {
+                                    EditorToolItem(icon: "plus.circle", title: "Picture")
+                                }
+                                .buttonStyle(.plain)
                             }
                         )
-                        .padding(.horizontal, 34)
-                        .padding(.vertical, 28)
+                        .frame(width: proxy.size.width, height: panelHeight)
                     }
+                    .frame(width: proxy.size.width, height: proxy.size.height, alignment: .top)
                 }
             }
-
-            VStack {
-                Spacer()
-                EditorToolBar(
-                    selectedElementID: repository.selectedElementID,
-                    onText: {
-                        draftText = ""
-                        showingTextSheet = true
-                    },
-                    onSticker: {
-                        repository.addSticker(to: pageID)
-                    },
-                    onDelete: {
-                        if let selectedID = repository.selectedElementID {
-                            repository.deleteElement(selectedID, from: pageID)
-                        }
-                    },
-                    photoPicker: {
-                        PhotosPicker(selection: $selectedPhoto, matching: .images) {
-                            Image(systemName: "photo.on.rectangle")
-                                .toolIcon()
-                        }
-                    }
-                )
-            }
         }
+        .toolbar(.hidden, for: .navigationBar)
         .navigationBarTitleDisplayMode(.inline)
+        .onAppear {
+            repository.ensureEditableCanvas(for: pageID)
+        }
         .sheet(isPresented: $showingTextSheet) {
-            TextInputSheet(text: $draftText) {
-                repository.addText(draftText, to: pageID)
+            TextInputSheet(text: $draftText, mode: textMode) {
+                switch textMode {
+                case .normal:
+                    repository.addText(draftText, to: pageID)
+                case .wordArt:
+                    repository.addWordArt(draftText, to: pageID)
+                }
                 showingTextSheet = false
             }
             .presentationDetents([.medium])
@@ -373,58 +437,118 @@ private struct CanvasEditorView: View {
 }
 
 private struct EditorTopBar: View {
-    let title: String
-    let onBackground: () -> Void
+    let canUndo: Bool
+    let canRedo: Bool
+    let activePanel: EditorPanel
+    let onBack: () -> Void
+    let onUndo: () -> Void
+    let onRedo: () -> Void
+    let onLayer: () -> Void
+    let onMulti: () -> Void
+    let onMore: () -> Void
+    let onDone: () -> Void
 
     var body: some View {
-        HStack(spacing: 12) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(title)
-                    .font(.system(size: 21, weight: .bold, design: .serif))
-                    .foregroundStyle(Color.ink)
-                    .lineLimit(1)
-
-                Text("Saved in notebook")
-                    .font(.system(size: 12, weight: .medium, design: .rounded))
-                    .foregroundStyle(Color.inkSoft)
+        HStack(spacing: 11) {
+            Button(action: onBack) {
+                Image(systemName: "arrow.left")
+                    .font(.system(size: 30, weight: .semibold))
+                    .frame(width: 42, height: 62)
             }
+            .buttonStyle(.plain)
+            .foregroundStyle(Color.clay)
 
             Spacer()
 
-            Button(action: onBackground) {
-                Image(systemName: "paintpalette")
-                    .font(.system(size: 18, weight: .semibold))
-                    .foregroundStyle(Color.ink)
-                    .frame(width: 40, height: 40)
-                    .background(Color.paper)
-                    .clipShape(Circle())
-                    .overlay(Circle().stroke(Color.lineSoft, lineWidth: 1.2))
+            EditorTopTool(icon: "arrow.uturn.backward", title: "Undo", selected: false, disabled: !canUndo, action: onUndo)
+            EditorTopTool(icon: "arrow.uturn.forward", title: "Redo", selected: false, disabled: !canRedo, action: onRedo)
+            EditorTopTool(icon: "square.stack.3d.up", title: "Layer", selected: activePanel == .layer, disabled: false, action: onLayer)
+            EditorTopTool(icon: "square.dashed", title: "Multi", selected: activePanel == .multi, disabled: false, action: onMulti)
+            EditorTopTool(icon: "ellipsis", title: "More", selected: activePanel == .more, disabled: false, action: onMore)
+
+            Button(action: onDone) {
+                Text("OK")
+                    .font(.system(size: 16, weight: .bold, design: .rounded))
+                    .foregroundStyle(Color.paper)
+                    .frame(width: 58, height: 42)
+                    .background(Color.clay)
+                    .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+                    .shadow(color: Color.clay.opacity(0.22), radius: 0, x: 7, y: 7)
             }
             .buttonStyle(.plain)
         }
-        .padding(.horizontal, 18)
-        .padding(.vertical, 12)
-        .background(Color.paper.opacity(0.94))
-        .overlay(alignment: .bottom) {
-            Rectangle()
-                .fill(Color.lineSoft)
-                .frame(height: 1)
+        .padding(.horizontal, 16)
+        .padding(.top, 11)
+        .padding(.bottom, 8)
+    }
+}
+
+private struct EditorTopTool: View {
+    let icon: String
+    let title: String
+    let selected: Bool
+    let disabled: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            VStack(spacing: 4) {
+                Image(systemName: icon)
+                    .font(.system(size: 28, weight: .semibold))
+                    .frame(width: 40, height: 32)
+
+                Text(title)
+                    .font(.system(size: 12, weight: .medium, design: .rounded))
+                    .lineLimit(1)
+            }
+            .foregroundStyle(disabled ? Color.clay.opacity(0.24) : (selected ? Color.clay : Color.clay.opacity(0.82)))
+            .frame(width: 57, height: 64)
         }
+        .buttonStyle(.plain)
+        .disabled(disabled)
     }
 }
 
 private struct CanvasWorkspace: View {
     let document: CanvasDocument
     let selectedElementID: UUID?
+    let availableSize: CGSize
     let onSelect: (UUID?) -> Void
+    let onMoveStart: () -> Void
     let onMove: (UUID, CGPoint) -> Void
     let onCommit: () -> Void
     let onDelete: (UUID) -> Void
     let onScale: (UUID, CGFloat) -> Void
     let onRotate: (UUID, Double) -> Void
+    let onTransform: (UUID, CGFloat, Double) -> Void
     @State private var dragStartFrames: [UUID: CGPoint] = [:]
+    @State private var undoCapturedForDrag: Set<UUID> = []
+    @State private var magnificationBase: CGFloat = 1
+    @State private var rotationBase: Angle = .zero
+
+    private var canvasScale: CGFloat {
+        let horizontal = (availableSize.width - 20) / document.canvasSize.width
+        let vertical = max(0.2, (availableSize.height - 16) / document.canvasSize.height)
+        return max(0.2, min(horizontal, vertical))
+    }
 
     var body: some View {
+        ZStack {
+            canvasBody
+                .frame(width: document.canvasSize.width, height: document.canvasSize.height)
+                .scaleEffect(canvasScale)
+                .frame(width: document.canvasSize.width * canvasScale, height: document.canvasSize.height * canvasScale)
+                .shadow(color: Color.black.opacity(0.06), radius: 10, x: 0, y: 4)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .padding(.top, 4)
+        .padding(.horizontal, 10)
+        .onTapGesture {
+            onSelect(nil)
+        }
+    }
+
+    private var canvasBody: some View {
         ZStack {
             CanvasSurface(background: document.background)
 
@@ -437,12 +561,44 @@ private struct CanvasWorkspace: View {
                         DragGesture()
                             .onChanged { value in
                                 onSelect(element.id)
+                                captureTransformUndo(for: element.id)
                                 let start = dragStartFrames[element.id] ?? CGPoint(x: element.x, y: element.y)
                                 dragStartFrames[element.id] = start
                                 onMove(element.id, CGPoint(x: start.x + value.translation.width, y: start.y + value.translation.height))
                             }
                             .onEnded { _ in
                                 dragStartFrames[element.id] = nil
+                                undoCapturedForDrag.remove(element.id)
+                                onCommit()
+                            }
+                    )
+                    .simultaneousGesture(
+                        MagnificationGesture()
+                            .onChanged { value in
+                                onSelect(element.id)
+                                captureTransformUndo(for: element.id)
+                                let delta = value / magnificationBase
+                                magnificationBase = value
+                                onTransform(element.id, delta, 0)
+                            }
+                            .onEnded { _ in
+                                magnificationBase = 1
+                                undoCapturedForDrag.remove(element.id)
+                                onCommit()
+                            }
+                    )
+                    .simultaneousGesture(
+                        RotationGesture()
+                            .onChanged { value in
+                                onSelect(element.id)
+                                captureTransformUndo(for: element.id)
+                                let delta = value - rotationBase
+                                rotationBase = value
+                                onTransform(element.id, 1, delta.degrees)
+                            }
+                            .onEnded { _ in
+                                rotationBase = .zero
+                                undoCapturedForDrag.remove(element.id)
                                 onCommit()
                             }
                     )
@@ -453,9 +609,34 @@ private struct CanvasWorkspace: View {
                         if selectedElementID == element.id {
                             TransformHandles(
                                 onDelete: { onDelete(element.id) },
-                                onScaleUp: { onScale(element.id, 1.08) },
-                                onScaleDown: { onScale(element.id, 0.92) },
-                                onRotate: { onRotate(element.id, 12) }
+                                onScaleStart: { captureTransformUndo(for: element.id) },
+                                onScaleChanged: { factor in
+                                    onTransform(element.id, factor, 0)
+                                },
+                                onScaleEnded: {
+                                    undoCapturedForDrag.remove(element.id)
+                                    onCommit()
+                                },
+                                onRotateStart: { captureTransformUndo(for: element.id) },
+                                onRotateChanged: { degrees in
+                                    onTransform(element.id, 1, degrees)
+                                },
+                                onRotateEnded: {
+                                    undoCapturedForDrag.remove(element.id)
+                                    onCommit()
+                                },
+                                onNudgeScale: { factor in
+                                    captureTransformUndo(for: element.id)
+                                    onScale(element.id, factor)
+                                    undoCapturedForDrag.remove(element.id)
+                                    onCommit()
+                                },
+                                onNudgeRotate: { degrees in
+                                    captureTransformUndo(for: element.id)
+                                    onRotate(element.id, degrees)
+                                    undoCapturedForDrag.remove(element.id)
+                                    onCommit()
+                                }
                             )
                             .frame(width: element.width + 34, height: element.height + 34)
                             .position(x: element.x, y: element.y)
@@ -464,13 +645,12 @@ private struct CanvasWorkspace: View {
                     }
             }
         }
-        .frame(width: document.canvasSize.width, height: document.canvasSize.height)
-        .scaleEffect(0.27, anchor: .topLeading)
-        .frame(width: document.canvasSize.width * 0.27, height: document.canvasSize.height * 0.27)
-        .shadow(color: Color.black.opacity(0.18), radius: 24, x: 0, y: 14)
-        .onTapGesture {
-            onSelect(nil)
-        }
+    }
+
+    private func captureTransformUndo(for elementID: UUID) {
+        guard !undoCapturedForDrag.contains(elementID) else { return }
+        onMoveStart()
+        undoCapturedForDrag.insert(elementID)
     }
 }
 
@@ -478,12 +658,16 @@ private struct CanvasSurface: View {
     let background: CanvasBackground
 
     var body: some View {
-        RoundedRectangle(cornerRadius: 36, style: .continuous)
+        RoundedRectangle(cornerRadius: 12, style: .continuous)
             .fill(background.gradient)
             .overlay {
-                GridPattern(spacing: 54)
-                    .stroke(Color.white.opacity(0.22), lineWidth: 2)
-                    .clipShape(RoundedRectangle(cornerRadius: 36, style: .continuous))
+                GridPattern(spacing: 58)
+                    .stroke(Color.editorGrid, style: StrokeStyle(lineWidth: 1.25, dash: [8, 8]))
+                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            }
+            .overlay {
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .stroke(Color.white.opacity(0.92), lineWidth: 1)
             }
     }
 }
@@ -502,9 +686,24 @@ private struct CanvasElementView: View {
                     .multilineTextAlignment(.center)
                     .frame(width: element.width, height: element.height)
                     .minimumScaleFactor(0.3)
+            case .wordArt:
+                Text(element.text ?? "")
+                    .font(.system(size: element.fontSize, weight: .black, design: .serif))
+                    .foregroundStyle(
+                        LinearGradient(
+                            colors: [Color(hex: element.colorHex), Color.sand, Color.paper],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+                    .multilineTextAlignment(.center)
+                    .frame(width: element.width, height: element.height)
+                    .minimumScaleFactor(0.3)
+                    .shadow(color: Color.clay.opacity(0.28), radius: 0, x: 5, y: 5)
             case .sticker:
                 Text(element.symbol ?? "sparkle")
                     .font(.system(size: min(element.width, element.height) * 0.72, weight: .semibold))
+                    .foregroundStyle(Color(hex: element.colorHex))
                     .frame(width: element.width, height: element.height)
                     .background(Color(hex: element.colorHex).opacity(0.15))
                     .clipShape(RoundedRectangle(cornerRadius: 26, style: .continuous))
@@ -523,6 +722,12 @@ private struct CanvasElementView: View {
                         .background(Color.paper)
                         .clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
                 }
+            case .tape:
+                TapeElement(color: Color(hex: element.colorHex))
+                    .frame(width: element.width, height: element.height)
+            case .brush:
+                BrushElement(color: Color(hex: element.colorHex))
+                    .frame(width: element.width, height: element.height)
             }
         }
         .overlay {
@@ -535,84 +740,307 @@ private struct CanvasElementView: View {
     }
 }
 
-private struct TransformHandles: View {
-    let onDelete: () -> Void
-    let onScaleUp: () -> Void
-    let onScaleDown: () -> Void
-    let onRotate: () -> Void
+private struct TapeElement: View {
+    let color: Color
 
     var body: some View {
         ZStack {
-            handle("trash", alignment: .topLeading, action: onDelete)
-            handle("plus.magnifyingglass", alignment: .bottomTrailing, action: onScaleUp)
-            handle("minus.magnifyingglass", alignment: .bottomLeading, action: onScaleDown)
-            handle("rotate.right", alignment: .topTrailing, action: onRotate)
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(color.opacity(0.72))
+
+            GridPattern(spacing: 44)
+                .stroke(Color.paper.opacity(0.56), style: StrokeStyle(lineWidth: 5, lineCap: .round, dash: [20, 18]))
+                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        }
+    }
+}
+
+private struct BrushElement: View {
+    let color: Color
+
+    var body: some View {
+        Path { path in
+            path.move(to: CGPoint(x: 18, y: 100))
+            path.addCurve(to: CGPoint(x: 180, y: 48), control1: CGPoint(x: 70, y: 10), control2: CGPoint(x: 124, y: 28))
+            path.addCurve(to: CGPoint(x: 360, y: 118), control1: CGPoint(x: 240, y: 78), control2: CGPoint(x: 284, y: 166))
+            path.addCurve(to: CGPoint(x: 600, y: 82), control1: CGPoint(x: 430, y: 58), control2: CGPoint(x: 526, y: 36))
+        }
+        .stroke(color, style: StrokeStyle(lineWidth: 46, lineCap: .round, lineJoin: .round))
+        .overlay {
+            Path { path in
+                path.move(to: CGPoint(x: 52, y: 94))
+                path.addCurve(to: CGPoint(x: 560, y: 84), control1: CGPoint(x: 190, y: 10), control2: CGPoint(x: 344, y: 172))
+            }
+            .stroke(Color.paper.opacity(0.35), style: StrokeStyle(lineWidth: 9, lineCap: .round, dash: [26, 24]))
+        }
+    }
+}
+
+private struct TransformHandles: View {
+    let onDelete: () -> Void
+    let onScaleStart: () -> Void
+    let onScaleChanged: (CGFloat) -> Void
+    let onScaleEnded: () -> Void
+    let onRotateStart: () -> Void
+    let onRotateChanged: (Double) -> Void
+    let onRotateEnded: () -> Void
+    let onNudgeScale: (CGFloat) -> Void
+    let onNudgeRotate: (Double) -> Void
+    @State private var lastScaleDragDistance: CGFloat = 0
+    @State private var lastRotationDragAngle: Double = 0
+
+    var body: some View {
+        ZStack {
+            buttonHandle("trash", alignment: .topLeading, action: onDelete)
+            buttonHandle("minus.magnifyingglass", alignment: .bottomLeading) {
+                onNudgeScale(0.92)
+            }
+            scaleHandle
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
+            rotateHandle
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
         }
     }
 
-    private func handle(_ icon: String, alignment: Alignment, action: @escaping () -> Void) -> some View {
+    private var scaleHandle: some View {
+        handleContent("arrow.up.left.and.arrow.down.right")
+            .gesture(
+                DragGesture(minimumDistance: 0)
+                    .onChanged { value in
+                        if lastScaleDragDistance == 0 {
+                            onScaleStart()
+                        }
+                        let distance = hypot(value.translation.width, value.translation.height)
+                        let signedDistance = (value.translation.width + value.translation.height) >= 0 ? distance : -distance
+                        let delta = signedDistance - lastScaleDragDistance
+                        lastScaleDragDistance = signedDistance
+                        let factor = min(max(1 + delta / 260, 0.82), 1.22)
+                        onScaleChanged(factor)
+                    }
+                    .onEnded { _ in
+                        lastScaleDragDistance = 0
+                        onScaleEnded()
+                    }
+            )
+            .onTapGesture {
+                onNudgeScale(1.08)
+            }
+    }
+
+    private var rotateHandle: some View {
+        handleContent("rotate.right")
+            .gesture(
+                DragGesture(minimumDistance: 0)
+                    .onChanged { value in
+                        if lastRotationDragAngle == 0 {
+                            onRotateStart()
+                        }
+                        let angle = atan2(value.translation.height, value.translation.width) * 180 / .pi
+                        let normalized = value.translation == .zero ? 0 : angle
+                        let delta = normalized - lastRotationDragAngle
+                        lastRotationDragAngle = normalized
+                        onRotateChanged(min(max(delta, -8), 8))
+                    }
+                    .onEnded { _ in
+                        lastRotationDragAngle = 0
+                        onRotateEnded()
+                    }
+            )
+            .onTapGesture {
+                onNudgeRotate(12)
+            }
+    }
+
+    private func buttonHandle(_ icon: String, alignment: Alignment, action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            Image(systemName: icon)
-                .font(.system(size: 22, weight: .bold))
-                .foregroundStyle(Color.paper)
-                .frame(width: 54, height: 54)
-                .background(Color.clay)
-                .clipShape(Circle())
-                .overlay(Circle().stroke(Color.paper, lineWidth: 4))
+            handleContent(icon)
         }
         .buttonStyle(.plain)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: alignment)
     }
+
+    private func handleContent(_ icon: String) -> some View {
+        Image(systemName: icon)
+            .font(.system(size: 21, weight: .bold))
+            .foregroundStyle(Color.paper)
+            .frame(width: 56, height: 56)
+            .background(Color.clay)
+            .clipShape(Circle())
+            .overlay(Circle().stroke(Color.paper, lineWidth: 4))
+    }
 }
 
-private struct EditorToolBar<PhotoPicker: View>: View {
+private enum EditorPanel {
+    case multi
+    case layer
+    case more
+}
+
+private enum TextInsertMode {
+    case normal
+    case wordArt
+}
+
+private struct EditorToolPanel<PhotoPicker: View>: View {
+    let activePanel: EditorPanel
     let selectedElementID: UUID?
+    let onTemplate: () -> Void
     let onText: () -> Void
+    let onWordArt: () -> Void
+    let onEffect: () -> Void
     let onSticker: () -> Void
+    let onBackground: () -> Void
+    let onTape: () -> Void
+    let onBrush: () -> Void
     let onDelete: () -> Void
+    let onBringForward: () -> Void
+    let onSendBackward: () -> Void
+    let onBringToFront: () -> Void
+    let onSendToBack: () -> Void
     @ViewBuilder let photoPicker: () -> PhotoPicker
 
     var body: some View {
-        HStack(spacing: 18) {
-            Button(action: onText) {
-                Image(systemName: "textformat")
-                    .toolIcon()
-            }
-            .buttonStyle(.plain)
+        VStack(spacing: 0) {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(alignment: .top, spacing: 20) {
+                    switch activePanel {
+                    case .multi:
+                        Button(action: onTemplate) {
+                            EditorToolItem(icon: "square.grid.2x2", title: "Template")
+                        }
+                        .buttonStyle(.plain)
 
-            Button(action: onSticker) {
-                Image(systemName: "sparkles")
-                    .toolIcon()
-            }
-            .buttonStyle(.plain)
+                        photoPicker()
 
-            photoPicker()
+                        Button(action: onText) {
+                            EditorToolItem(icon: "textformat", title: "Text")
+                        }
+                        .buttonStyle(.plain)
 
-            Button(action: onDelete) {
-                Image(systemName: "trash")
-                    .toolIcon(selectedElementID == nil ? Color.inkSoft.opacity(0.45) : Color.clay)
+                        Button(action: onEffect) {
+                            EditorToolItem(icon: "sparkles", title: "Effect")
+                        }
+                        .buttonStyle(.plain)
+
+                        Button(action: onSticker) {
+                            EditorToolItem(icon: "sticker", title: "Stickers")
+                        }
+                        .buttonStyle(.plain)
+
+                        Button(action: onBackground) {
+                            EditorToolItem(icon: "line.3.horizontal", title: "Background")
+                        }
+                        .buttonStyle(.plain)
+
+                        Button(action: onTape) {
+                            EditorToolItem(icon: "rectangle.on.rectangle.angled", title: "Tape")
+                        }
+                        .buttonStyle(.plain)
+
+                        Button(action: onBrush) {
+                            EditorToolItem(icon: "paintbrush.pointed", title: "Brush")
+                        }
+                        .buttonStyle(.plain)
+
+                        Button(action: onWordArt) {
+                            EditorToolItem(icon: "textformat.alt", title: "WordArt")
+                        }
+                        .buttonStyle(.plain)
+                    case .layer:
+                        Button(action: onBringForward) {
+                            EditorToolItem(icon: "arrow.up.square", title: "Forward", disabled: selectedElementID == nil)
+                        }
+                        .disabled(selectedElementID == nil)
+                        .buttonStyle(.plain)
+
+                        Button(action: onSendBackward) {
+                            EditorToolItem(icon: "arrow.down.square", title: "Backward", disabled: selectedElementID == nil)
+                        }
+                        .disabled(selectedElementID == nil)
+                        .buttonStyle(.plain)
+
+                        Button(action: onBringToFront) {
+                            EditorToolItem(icon: "square.3.layers.3d.top.filled", title: "Top", disabled: selectedElementID == nil)
+                        }
+                        .disabled(selectedElementID == nil)
+                        .buttonStyle(.plain)
+
+                        Button(action: onSendToBack) {
+                            EditorToolItem(icon: "square.3.layers.3d.bottom.filled", title: "Bottom", disabled: selectedElementID == nil)
+                        }
+                        .disabled(selectedElementID == nil)
+                        .buttonStyle(.plain)
+
+                        Button(action: onDelete) {
+                            EditorToolItem(icon: "trash", title: "Delete", disabled: selectedElementID == nil)
+                        }
+                        .disabled(selectedElementID == nil)
+                        .buttonStyle(.plain)
+                    case .more:
+                        Button(action: onBrush) {
+                            EditorToolItem(icon: "scribble.variable", title: "Stroke")
+                        }
+                        .buttonStyle(.plain)
+
+                        Button(action: onBackground) {
+                            EditorToolItem(icon: "paintpalette", title: "Palette")
+                        }
+                        .buttonStyle(.plain)
+
+                        Button(action: onTape) {
+                            EditorToolItem(icon: "rectangle.fill.on.rectangle.fill", title: "Texture")
+                        }
+                        .buttonStyle(.plain)
+
+                        Button(action: onDelete) {
+                            EditorToolItem(icon: "trash", title: "Delete", disabled: selectedElementID == nil)
+                        }
+                        .disabled(selectedElementID == nil)
+                        .buttonStyle(.plain)
+                    }
+                }
+                .padding(.horizontal, 22)
+                .padding(.top, 12)
+                .padding(.bottom, 20)
             }
-            .disabled(selectedElementID == nil)
-            .buttonStyle(.plain)
         }
-        .padding(.horizontal, 22)
-        .padding(.vertical, 14)
-        .background(Color.paper)
-        .clipShape(Capsule())
-        .overlay(Capsule().stroke(Color.lineSoft, lineWidth: 1.3))
-        .shadow(color: Color.shadow, radius: 16, x: 0, y: 8)
-        .padding(.bottom, 18)
+        .frame(height: 118)
+        .background(Color.editorPeach)
+    }
+}
+
+private struct EditorToolItem: View {
+    let icon: String
+    let title: String
+    var disabled = false
+
+    var body: some View {
+        VStack(spacing: 6) {
+            Image(systemName: icon)
+                .font(.system(size: 34, weight: .semibold))
+                .foregroundStyle(disabled ? Color.clay.opacity(0.28) : Color.clay)
+                .frame(width: 62, height: 50)
+
+            Text(title)
+                .font(.system(size: 14, weight: .medium, design: .rounded))
+                .foregroundStyle(disabled ? Color.clay.opacity(0.28) : Color.clay)
+                .lineLimit(1)
+                .minimumScaleFactor(0.72)
+                .frame(width: 84)
+        }
+        .frame(width: 84, height: 86)
     }
 }
 
 private struct TextInputSheet: View {
     @Binding var text: String
+    let mode: TextInsertMode
     let onConfirm: () -> Void
     @FocusState private var focused: Bool
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text("Text")
+            Text(mode == .wordArt ? "WordArt" : "Text")
                 .font(.system(size: 26, weight: .bold, design: .serif))
                 .foregroundStyle(Color.ink)
 
@@ -635,7 +1063,7 @@ private struct TextInputSheet: View {
 
                 Spacer()
 
-                Button("Add to Page", action: onConfirm)
+                Button(mode == .wordArt ? "Add WordArt" : "Add to Page", action: onConfirm)
                     .font(.system(size: 16, weight: .semibold, design: .rounded))
                     .foregroundStyle(Color.paper)
                     .padding(.horizontal, 18)
@@ -1035,7 +1463,7 @@ private struct CanvasThumbnail: View {
 
             ForEach(document.elements.prefix(4)) { element in
                 switch element.kind {
-                case .text:
+                case .text, .wordArt:
                     Text(element.text ?? "")
                         .font(.system(size: 9, weight: .bold, design: .serif))
                         .foregroundStyle(Color(hex: element.colorHex))
@@ -1050,6 +1478,17 @@ private struct CanvasThumbnail: View {
                     RoundedRectangle(cornerRadius: 5, style: .continuous)
                         .fill(Color.mist.opacity(0.58))
                         .frame(width: 30, height: 24)
+                        .position(x: element.x * 0.077, y: element.y * 0.077)
+                case .tape:
+                    RoundedRectangle(cornerRadius: 2, style: .continuous)
+                        .fill(Color(hex: element.colorHex).opacity(0.7))
+                        .frame(width: 46, height: 7)
+                        .position(x: element.x * 0.077, y: element.y * 0.077)
+                case .brush:
+                    Capsule()
+                        .fill(Color(hex: element.colorHex).opacity(0.7))
+                        .frame(width: 42, height: 8)
+                        .rotationEffect(.degrees(element.rotation))
                         .position(x: element.x * 0.077, y: element.y * 0.077)
                 }
             }
@@ -1536,6 +1975,8 @@ extension Color {
     static let ink = Color(red: 0.18, green: 0.16, blue: 0.14)
     static let inkSoft = Color(red: 0.56, green: 0.54, blue: 0.50)
     static let editorChrome = Color(red: 0.92, green: 0.91, blue: 0.88)
+    static let editorPeach = Color(red: 0.95, green: 0.84, blue: 0.72)
+    static let editorGrid = Color(red: 0.78, green: 0.72, blue: 0.66).opacity(0.18)
     static let tabIcon = Color(red: 0.54, green: 0.52, blue: 0.50)
     static let tabShadow = Color(red: 0.94, green: 0.84, blue: 0.72)
     static let tabBorder = Color(red: 0.92, green: 0.82, blue: 0.70)

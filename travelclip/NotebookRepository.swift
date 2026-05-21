@@ -15,6 +15,8 @@ final class NotebookRepository: ObservableObject {
     @Published var selectedElementID: UUID?
 
     private let fileManager = FileManager.default
+    private var undoStacks: [UUID: [CanvasDocument]] = [:]
+    private var redoStacks: [UUID: [CanvasDocument]] = [:]
 
     private var databaseURL: URL {
         documentsURL.appendingPathComponent("travelclip-local-database.json")
@@ -43,6 +45,13 @@ final class NotebookRepository: ObservableObject {
         notebooks = [notebook]
         let pageID = createPage(in: notebook.id, title: "First Page", template: .postcard, saveAfterCreate: false)
         notebooks[0].coverPageID = pageID
+        save()
+    }
+
+    func ensureEditableCanvas(for pageID: UUID) {
+        guard let index = pages.firstIndex(where: { $0.id == pageID }) else { return }
+        guard pages[index].canvasDocument.elements.isEmpty else { return }
+        pages[index].canvasDocument.background = CanvasBackground(colorA: "#FFFFFF", colorB: "#FFFFFF")
         save()
     }
 
@@ -131,6 +140,7 @@ final class NotebookRepository: ObservableObject {
     func addText(_ text: String, to pageID: UUID) {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
+        storeUndoSnapshot(for: pageID)
         mutatePage(pageID) { page in
             let zIndex = (page.canvasDocument.elements.map(\.zIndex).max() ?? 0) + 1
             page.canvasDocument.elements.append(
@@ -150,9 +160,34 @@ final class NotebookRepository: ObservableObject {
         }
     }
 
+    func addWordArt(_ text: String, to pageID: UUID) {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        storeUndoSnapshot(for: pageID)
+        mutatePage(pageID) { page in
+            let zIndex = (page.canvasDocument.elements.map(\.zIndex).max() ?? 0) + 1
+            page.canvasDocument.elements.append(
+                CanvasElement(
+                    kind: .wordArt,
+                    text: trimmed,
+                    x: 540,
+                    y: 420,
+                    width: 720,
+                    height: 160,
+                    rotation: -4,
+                    zIndex: zIndex,
+                    colorHex: "#B77255",
+                    fontSize: 86,
+                    bold: true
+                )
+            )
+        }
+    }
+
     func addSticker(to pageID: UUID) {
         let symbols = ["sparkles", "heart.fill", "leaf.fill", "mappin.and.ellipse", "camera.fill", "airplane.departure"]
         let colors = ["#C4563F", "#7AA08C", "#D1B890", "#A9C0D2"]
+        storeUndoSnapshot(for: pageID)
         mutatePage(pageID) { page in
             let zIndex = (page.canvasDocument.elements.map(\.zIndex).max() ?? 0) + 1
             page.canvasDocument.elements.append(
@@ -171,12 +206,73 @@ final class NotebookRepository: ObservableObject {
         }
     }
 
+    func addEffect(to pageID: UUID) {
+        storeUndoSnapshot(for: pageID)
+        mutatePage(pageID) { page in
+            let zIndex = (page.canvasDocument.elements.map(\.zIndex).max() ?? 0) + 1
+            page.canvasDocument.elements.append(
+                CanvasElement(
+                    kind: .sticker,
+                    symbol: "wand.and.sparkles",
+                    x: CGFloat(Int.random(in: 300...780)),
+                    y: CGFloat(Int.random(in: 360...980)),
+                    width: 260,
+                    height: 220,
+                    rotation: Double.random(in: -12...12),
+                    zIndex: zIndex,
+                    opacity: 0.82,
+                    colorHex: "#D99A8C"
+                )
+            )
+        }
+    }
+
+    func addTape(to pageID: UUID) {
+        storeUndoSnapshot(for: pageID)
+        mutatePage(pageID) { page in
+            let zIndex = (page.canvasDocument.elements.map(\.zIndex).max() ?? 0) + 1
+            page.canvasDocument.elements.append(
+                CanvasElement(
+                    kind: .tape,
+                    x: 540,
+                    y: CGFloat(Int.random(in: 360...1080)),
+                    width: 760,
+                    height: 92,
+                    rotation: Double.random(in: -8...8),
+                    zIndex: zIndex,
+                    colorHex: ["#E0B56D", "#A8C8B6", "#D99A8C", "#9DB7D1"].randomElement() ?? "#E0B56D"
+                )
+            )
+        }
+    }
+
+    func addBrushStroke(to pageID: UUID) {
+        storeUndoSnapshot(for: pageID)
+        mutatePage(pageID) { page in
+            let zIndex = (page.canvasDocument.elements.map(\.zIndex).max() ?? 0) + 1
+            page.canvasDocument.elements.append(
+                CanvasElement(
+                    kind: .brush,
+                    x: 540,
+                    y: CGFloat(Int.random(in: 460...1040)),
+                    width: 620,
+                    height: 170,
+                    rotation: Double.random(in: -7...7),
+                    zIndex: zIndex,
+                    opacity: 0.72,
+                    colorHex: ["#B77255", "#6F9D86", "#D6A858", "#7E8EAB"].randomElement() ?? "#B77255"
+                )
+            )
+        }
+    }
+
     func addPhoto(_ item: PhotosPickerItem?, to pageID: UUID) async {
         guard let item, let data = try? await item.loadTransferable(type: Data.self) else { return }
         do {
             try fileManager.createDirectory(at: assetsURL, withIntermediateDirectories: true)
             let url = assetsURL.appendingPathComponent("\(UUID().uuidString).jpg")
             try data.write(to: url, options: Data.WritingOptions.atomic)
+            storeUndoSnapshot(for: pageID)
             mutatePage(pageID) { page in
                 let zIndex = (page.canvasDocument.elements.map(\.zIndex).max() ?? 0) + 1
                 page.canvasDocument.elements.append(
@@ -219,7 +315,17 @@ final class NotebookRepository: ObservableObject {
         }
     }
 
+    func transformElement(_ elementID: UUID, on pageID: UUID, scale: CGFloat, rotation: Double) {
+        mutateElement(elementID, on: pageID, autosave: false) { element in
+            element.width = min(max(element.width * scale, 86), 980)
+            element.height = min(max(element.height * scale, 64), 1200)
+            element.fontSize = min(max(element.fontSize * scale, 24), 180)
+            element.rotation += rotation
+        }
+    }
+
     func deleteElement(_ elementID: UUID, from pageID: UUID) {
+        storeUndoSnapshot(for: pageID)
         mutatePage(pageID) { page in
             page.canvasDocument.elements.removeAll { $0.id == elementID }
         }
@@ -236,12 +342,117 @@ final class NotebookRepository: ObservableObject {
             ("#FDF0D6", "#E4F1EC"),
             ("#F6E6E8", "#EAF1F7"),
             ("#FBF8F0", "#EDE4D1"),
-            ("#E8F2EE", "#FFF7E6")
+            ("#E8F2EE", "#FFF7E6"),
+            ("#FFFFFF", "#FFFFFF")
         ]
         let pair = options.randomElement() ?? options[0]
+        storeUndoSnapshot(for: pageID)
         mutatePage(pageID) { page in
             page.canvasDocument.background.colorA = pair.0
             page.canvasDocument.background.colorB = pair.1
+        }
+    }
+
+    func applyTemplate(to pageID: UUID) {
+        storeUndoSnapshot(for: pageID)
+        mutatePage(pageID) { page in
+            let startZ = (page.canvasDocument.elements.map(\.zIndex).max() ?? 0) + 1
+            page.canvasDocument.background = CanvasBackground(colorA: "#FFFFFF", colorB: "#FFFFFF")
+            page.canvasDocument.elements.append(contentsOf: [
+                CanvasElement(kind: .tape, x: 540, y: 250, width: 760, height: 90, rotation: -2, zIndex: startZ, colorHex: "#E4C385"),
+                CanvasElement(kind: .image, x: 350, y: 570, width: 420, height: 320, rotation: -5, zIndex: startZ + 1, colorHex: "#A9C0D2"),
+                CanvasElement(kind: .wordArt, text: "Travel clip", x: 620, y: 820, width: 560, height: 140, rotation: 3, zIndex: startZ + 2, colorHex: "#B77255", fontSize: 76, bold: true),
+                CanvasElement(kind: .sticker, symbol: "sparkles", x: 790, y: 530, width: 150, height: 140, rotation: 8, zIndex: startZ + 3, colorHex: "#7AA08C")
+            ])
+        }
+    }
+
+    func bringForward(_ elementID: UUID, on pageID: UUID) {
+        storeUndoSnapshot(for: pageID)
+        mutateElement(elementID, on: pageID) { element in
+            element.zIndex += 1
+        }
+        normalizeLayerOrder(on: pageID)
+    }
+
+    func sendBackward(_ elementID: UUID, on pageID: UUID) {
+        storeUndoSnapshot(for: pageID)
+        mutateElement(elementID, on: pageID) { element in
+            element.zIndex -= 1
+        }
+        normalizeLayerOrder(on: pageID)
+    }
+
+    func bringToFront(_ elementID: UUID, on pageID: UUID) {
+        storeUndoSnapshot(for: pageID)
+        let top = (page(id: pageID)?.canvasDocument.elements.map(\.zIndex).max() ?? 0) + 1
+        mutateElement(elementID, on: pageID) { element in
+            element.zIndex = top
+        }
+        normalizeLayerOrder(on: pageID)
+    }
+
+    func sendToBack(_ elementID: UUID, on pageID: UUID) {
+        storeUndoSnapshot(for: pageID)
+        let bottom = (page(id: pageID)?.canvasDocument.elements.map(\.zIndex).min() ?? 0) - 1
+        mutateElement(elementID, on: pageID) { element in
+            element.zIndex = bottom
+        }
+        normalizeLayerOrder(on: pageID)
+    }
+
+    func undo(pageID: UUID) {
+        guard var stack = undoStacks[pageID], let previous = stack.popLast() else { return }
+        guard let index = pages.firstIndex(where: { $0.id == pageID }) else { return }
+        redoStacks[pageID, default: []].append(pages[index].canvasDocument)
+        pages[index].canvasDocument = previous
+        pages[index].updatedAt = Date()
+        undoStacks[pageID] = stack
+        selectedElementID = nil
+        save()
+    }
+
+    func redo(pageID: UUID) {
+        guard var stack = redoStacks[pageID], let next = stack.popLast() else { return }
+        guard let index = pages.firstIndex(where: { $0.id == pageID }) else { return }
+        undoStacks[pageID, default: []].append(pages[index].canvasDocument)
+        pages[index].canvasDocument = next
+        pages[index].updatedAt = Date()
+        redoStacks[pageID] = stack
+        selectedElementID = nil
+        save()
+    }
+
+    func canUndo(pageID: UUID) -> Bool {
+        !(undoStacks[pageID]?.isEmpty ?? true)
+    }
+
+    func canRedo(pageID: UUID) -> Bool {
+        !(redoStacks[pageID]?.isEmpty ?? true)
+    }
+
+    func beginUndoGroup(for pageID: UUID) {
+        storeUndoSnapshot(for: pageID)
+    }
+
+    private func storeUndoSnapshot(for pageID: UUID) {
+        guard let document = page(id: pageID)?.canvasDocument else { return }
+        undoStacks[pageID, default: []].append(document)
+        if (undoStacks[pageID]?.count ?? 0) > 40 {
+            undoStacks[pageID]?.removeFirst()
+        }
+        redoStacks[pageID] = []
+    }
+
+    private func normalizeLayerOrder(on pageID: UUID) {
+        mutatePage(pageID) { page in
+            let sortedIDs = page.canvasDocument.elements
+                .sorted { $0.zIndex < $1.zIndex }
+                .map(\.id)
+            for (index, id) in sortedIDs.enumerated() {
+                guard let elementIndex = page.canvasDocument.elements.firstIndex(where: { $0.id == id }) else { continue }
+                page.canvasDocument.elements[elementIndex].zIndex = index + 1
+            }
         }
     }
 
