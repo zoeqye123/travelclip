@@ -290,6 +290,7 @@ private struct CanvasEditorView: View {
     @State private var showingTextSheet = false
     @State private var selectedPhoto: PhotosPickerItem?
     @State private var activePanel: EditorPanel = .multi
+    @State private var brushMode = false
     @Environment(\.dismiss) private var dismiss
 
     private var page: JournalPage? {
@@ -308,9 +309,18 @@ private struct CanvasEditorView: View {
                     onBack: { dismiss() },
                     onUndo: { repository.undo(pageID: pageID) },
                     onRedo: { repository.redo(pageID: pageID) },
-                    onLayer: { activePanel = .layer },
-                    onMulti: { activePanel = .multi },
-                    onMore: { activePanel = .more },
+                    onLayer: {
+                        brushMode = false
+                        activePanel = .layer
+                    },
+                    onMulti: {
+                        brushMode = false
+                        activePanel = .multi
+                    },
+                    onMore: {
+                        brushMode = false
+                        activePanel = .more
+                    },
                     onDone: { repository.commitPage(pageID) }
                 )
 
@@ -345,6 +355,10 @@ private struct CanvasEditorView: View {
                                 },
                                 onTransform: { elementID, scale, rotation in
                                     repository.transformElement(elementID, on: pageID, scale: scale, rotation: rotation)
+                                },
+                                brushMode: brushMode,
+                                onBrushFinished: { points in
+                                    repository.addBrushStroke(points, to: pageID)
                                 }
                             )
                             .frame(width: proxy.size.width, height: canvasHeight)
@@ -355,7 +369,9 @@ private struct CanvasEditorView: View {
 
                         EditorToolPanel(
                             activePanel: activePanel,
+                            document: page?.canvasDocument,
                             selectedElementID: repository.selectedElementID,
+                            onSelect: { repository.selectedElementID = $0 },
                             onTemplate: { repository.applyTemplate(to: pageID) },
                             onText: {
                                 textMode = .normal
@@ -367,11 +383,18 @@ private struct CanvasEditorView: View {
                                 draftText = ""
                                 showingTextSheet = true
                             },
-                            onEffect: { repository.addEffect(to: pageID) },
+                            onEffect: {
+                                brushMode = false
+                                activePanel = .effect
+                                repository.addEffect(to: pageID)
+                            },
                             onSticker: { repository.addSticker(to: pageID) },
                             onBackground: { repository.updateBackground(for: pageID) },
                             onTape: { repository.addTape(to: pageID) },
-                            onBrush: { repository.addBrushStroke(to: pageID) },
+                            onBrush: {
+                                brushMode = true
+                                activePanel = .brush
+                            },
                             onDelete: {
                                 if let selectedID = repository.selectedElementID {
                                     repository.deleteElement(selectedID, from: pageID)
@@ -395,6 +418,46 @@ private struct CanvasEditorView: View {
                             onSendToBack: {
                                 if let selectedID = repository.selectedElementID {
                                     repository.sendToBack(selectedID, on: pageID)
+                                }
+                            },
+                            onToggleHidden: {
+                                if let selectedID = repository.selectedElementID {
+                                    repository.toggleHidden(selectedID, on: pageID)
+                                }
+                            },
+                            onToggleLocked: {
+                                if let selectedID = repository.selectedElementID {
+                                    repository.toggleLocked(selectedID, on: pageID)
+                                }
+                            },
+                            onOpacityDown: {
+                                if let selectedID = repository.selectedElementID {
+                                    repository.updateOpacity(selectedID, on: pageID, delta: -0.12)
+                                }
+                            },
+                            onOpacityUp: {
+                                if let selectedID = repository.selectedElementID {
+                                    repository.updateOpacity(selectedID, on: pageID, delta: 0.12)
+                                }
+                            },
+                            onCornerDown: {
+                                if let selectedID = repository.selectedElementID {
+                                    repository.updateCornerRadius(selectedID, on: pageID, delta: -8)
+                                }
+                            },
+                            onCornerUp: {
+                                if let selectedID = repository.selectedElementID {
+                                    repository.updateCornerRadius(selectedID, on: pageID, delta: 8)
+                                }
+                            },
+                            onToggleShadow: {
+                                if let selectedID = repository.selectedElementID {
+                                    repository.toggleShadow(selectedID, on: pageID)
+                                }
+                            },
+                            onToggleStroke: {
+                                if let selectedID = repository.selectedElementID {
+                                    repository.toggleStroke(selectedID, on: pageID)
                                 }
                             },
                             photoPicker: {
@@ -521,10 +584,13 @@ private struct CanvasWorkspace: View {
     let onScale: (UUID, CGFloat) -> Void
     let onRotate: (UUID, Double) -> Void
     let onTransform: (UUID, CGFloat, Double) -> Void
+    let brushMode: Bool
+    let onBrushFinished: ([CGPoint]) -> Void
     @State private var dragStartFrames: [UUID: CGPoint] = [:]
     @State private var undoCapturedForDrag: Set<UUID> = []
     @State private var magnificationBase: CGFloat = 1
     @State private var rotationBase: Angle = .zero
+    @State private var currentBrushPoints: [CGPoint] = []
 
     private var canvasScale: CGFloat {
         let horizontal = (availableSize.width - 20) / document.canvasSize.width
@@ -532,13 +598,30 @@ private struct CanvasWorkspace: View {
         return max(0.2, min(horizontal, vertical))
     }
 
+    private var displaySize: CGSize {
+        CGSize(width: document.canvasSize.width * canvasScale, height: document.canvasSize.height * canvasScale)
+    }
+
     var body: some View {
         ZStack {
             canvasBody
-                .frame(width: document.canvasSize.width, height: document.canvasSize.height)
-                .scaleEffect(canvasScale)
-                .frame(width: document.canvasSize.width * canvasScale, height: document.canvasSize.height * canvasScale)
+                .frame(width: displaySize.width, height: displaySize.height)
                 .shadow(color: Color.black.opacity(0.06), radius: 10, x: 0, y: 4)
+                .overlay {
+                    if brushMode {
+                        BrushCaptureOverlay(
+                            scale: canvasScale,
+                            currentPoints: currentBrushPoints,
+                            onChanged: { point in
+                                currentBrushPoints.append(point)
+                            },
+                            onEnded: {
+                                onBrushFinished(currentBrushPoints)
+                                currentBrushPoints = []
+                            }
+                        )
+                    }
+                }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .padding(.top, 4)
@@ -551,20 +634,28 @@ private struct CanvasWorkspace: View {
     private var canvasBody: some View {
         ZStack {
             CanvasSurface(background: document.background)
+                .frame(width: displaySize.width, height: displaySize.height)
 
-            ForEach(document.elements.sorted { $0.zIndex < $1.zIndex }) { element in
-                CanvasElementView(element: element, selected: selectedElementID == element.id)
-                    .position(x: element.x, y: element.y)
+            ForEach(document.elements.filter { !$0.hidden }.sorted { $0.zIndex < $1.zIndex }) { element in
+                CanvasElementView(element: element.displayScaled(by: canvasScale), selected: selectedElementID == element.id)
+                    .position(x: element.x * canvasScale, y: element.y * canvasScale)
                     .rotationEffect(.degrees(element.rotation))
                     .opacity(element.opacity)
                     .gesture(
                         DragGesture()
                             .onChanged { value in
+                                guard !element.locked else { return }
                                 onSelect(element.id)
                                 captureTransformUndo(for: element.id)
                                 let start = dragStartFrames[element.id] ?? CGPoint(x: element.x, y: element.y)
                                 dragStartFrames[element.id] = start
-                                onMove(element.id, CGPoint(x: start.x + value.translation.width, y: start.y + value.translation.height))
+                                onMove(
+                                    element.id,
+                                    CGPoint(
+                                        x: start.x + value.translation.width / canvasScale,
+                                        y: start.y + value.translation.height / canvasScale
+                                    )
+                                )
                             }
                             .onEnded { _ in
                                 dragStartFrames[element.id] = nil
@@ -575,6 +666,7 @@ private struct CanvasWorkspace: View {
                     .simultaneousGesture(
                         MagnificationGesture()
                             .onChanged { value in
+                                guard !element.locked else { return }
                                 onSelect(element.id)
                                 captureTransformUndo(for: element.id)
                                 let delta = value / magnificationBase
@@ -590,6 +682,7 @@ private struct CanvasWorkspace: View {
                     .simultaneousGesture(
                         RotationGesture()
                             .onChanged { value in
+                                guard !element.locked else { return }
                                 onSelect(element.id)
                                 captureTransformUndo(for: element.id)
                                 let delta = value - rotationBase
@@ -638,8 +731,8 @@ private struct CanvasWorkspace: View {
                                     onCommit()
                                 }
                             )
-                            .frame(width: element.width + 34, height: element.height + 34)
-                            .position(x: element.x, y: element.y)
+                            .frame(width: element.width * canvasScale + 34, height: element.height * canvasScale + 34)
+                            .position(x: element.x * canvasScale, y: element.y * canvasScale)
                             .rotationEffect(.degrees(element.rotation))
                         }
                     }
@@ -713,20 +806,29 @@ private struct CanvasElementView: View {
                         .resizable()
                         .scaledToFill()
                         .frame(width: element.width, height: element.height)
-                        .clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
+                        .clipShape(RoundedRectangle(cornerRadius: element.cornerRadius, style: .continuous))
                 } else {
                     Image(systemName: "photo")
                         .font(.system(size: 58, weight: .semibold))
                         .foregroundStyle(Color.inkSoft)
                         .frame(width: element.width, height: element.height)
                         .background(Color.paper)
-                        .clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
+                        .clipShape(RoundedRectangle(cornerRadius: element.cornerRadius, style: .continuous))
                 }
             case .tape:
                 TapeElement(color: Color(hex: element.colorHex))
                     .frame(width: element.width, height: element.height)
             case .brush:
-                BrushElement(color: Color(hex: element.colorHex))
+                BrushElement(element: element)
+                    .frame(width: element.width, height: element.height)
+            }
+        }
+        .blur(radius: element.blur)
+        .shadow(color: element.shadow ? Color.black.opacity(0.18) : .clear, radius: 18, x: 0, y: 10)
+        .overlay {
+            if element.stroke {
+                RoundedRectangle(cornerRadius: element.cornerRadius, style: .continuous)
+                    .stroke(Color(hex: element.colorHex).opacity(0.72), lineWidth: 7)
                     .frame(width: element.width, height: element.height)
             }
         }
@@ -736,6 +838,56 @@ private struct CanvasElementView: View {
                     .stroke(Color.clay, style: StrokeStyle(lineWidth: 4, dash: [18, 10]))
                     .frame(width: element.width + 18, height: element.height + 18)
             }
+        }
+    }
+}
+
+private extension CanvasElement {
+    func displayScaled(by scale: CGFloat) -> CanvasElement {
+        var copy = self
+        copy.x *= scale
+        copy.y *= scale
+        copy.width *= scale
+        copy.height *= scale
+        copy.fontSize *= scale
+        copy.cornerRadius *= scale
+        copy.blur *= scale
+        copy.brushWidth *= scale
+        copy.brushPoints = brushPoints.map { point in
+            CodablePoint(x: point.x * scale, y: point.y * scale)
+        }
+        return copy
+    }
+}
+
+private struct BrushCaptureOverlay: View {
+    let scale: CGFloat
+    let currentPoints: [CGPoint]
+    let onChanged: (CGPoint) -> Void
+    let onEnded: () -> Void
+
+    var body: some View {
+        ZStack {
+            Color.clear
+                .contentShape(Rectangle())
+                .gesture(
+                    DragGesture(minimumDistance: 0)
+                        .onChanged { value in
+                            onChanged(CGPoint(x: value.location.x / scale, y: value.location.y / scale))
+                        }
+                        .onEnded { _ in
+                            onEnded()
+                        }
+                )
+
+            Path { path in
+                guard let first = currentPoints.first else { return }
+                path.move(to: CGPoint(x: first.x * scale, y: first.y * scale))
+                for point in currentPoints.dropFirst() {
+                    path.addLine(to: CGPoint(x: point.x * scale, y: point.y * scale))
+                }
+            }
+            .stroke(Color.clay.opacity(0.72), style: StrokeStyle(lineWidth: max(3, 18 * scale), lineCap: .round, lineJoin: .round))
         }
     }
 }
@@ -756,22 +908,26 @@ private struct TapeElement: View {
 }
 
 private struct BrushElement: View {
-    let color: Color
+    let element: CanvasElement
 
     var body: some View {
-        Path { path in
-            path.move(to: CGPoint(x: 18, y: 100))
-            path.addCurve(to: CGPoint(x: 180, y: 48), control1: CGPoint(x: 70, y: 10), control2: CGPoint(x: 124, y: 28))
-            path.addCurve(to: CGPoint(x: 360, y: 118), control1: CGPoint(x: 240, y: 78), control2: CGPoint(x: 284, y: 166))
-            path.addCurve(to: CGPoint(x: 600, y: 82), control1: CGPoint(x: 430, y: 58), control2: CGPoint(x: 526, y: 36))
-        }
-        .stroke(color, style: StrokeStyle(lineWidth: 46, lineCap: .round, lineJoin: .round))
-        .overlay {
+        if element.brushPoints.count > 1 {
             Path { path in
-                path.move(to: CGPoint(x: 52, y: 94))
-                path.addCurve(to: CGPoint(x: 560, y: 84), control1: CGPoint(x: 190, y: 10), control2: CGPoint(x: 344, y: 172))
+                guard let first = element.brushPoints.first?.point else { return }
+                path.move(to: first)
+                for point in element.brushPoints.dropFirst().map(\.point) {
+                    path.addLine(to: point)
+                }
             }
-            .stroke(Color.paper.opacity(0.35), style: StrokeStyle(lineWidth: 9, lineCap: .round, dash: [26, 24]))
+            .stroke(Color(hex: element.colorHex), style: StrokeStyle(lineWidth: element.brushWidth, lineCap: .round, lineJoin: .round))
+        } else {
+            Path { path in
+                path.move(to: CGPoint(x: 18, y: 100))
+                path.addCurve(to: CGPoint(x: 180, y: 48), control1: CGPoint(x: 70, y: 10), control2: CGPoint(x: 124, y: 28))
+                path.addCurve(to: CGPoint(x: 360, y: 118), control1: CGPoint(x: 240, y: 78), control2: CGPoint(x: 284, y: 166))
+                path.addCurve(to: CGPoint(x: 600, y: 82), control1: CGPoint(x: 430, y: 58), control2: CGPoint(x: 526, y: 36))
+            }
+            .stroke(Color(hex: element.colorHex), style: StrokeStyle(lineWidth: element.brushWidth, lineCap: .round, lineJoin: .round))
         }
     }
 }
@@ -873,6 +1029,8 @@ private struct TransformHandles: View {
 private enum EditorPanel {
     case multi
     case layer
+    case effect
+    case brush
     case more
 }
 
@@ -883,7 +1041,9 @@ private enum TextInsertMode {
 
 private struct EditorToolPanel<PhotoPicker: View>: View {
     let activePanel: EditorPanel
+    let document: CanvasDocument?
     let selectedElementID: UUID?
+    let onSelect: (UUID?) -> Void
     let onTemplate: () -> Void
     let onText: () -> Void
     let onWordArt: () -> Void
@@ -897,7 +1057,19 @@ private struct EditorToolPanel<PhotoPicker: View>: View {
     let onSendBackward: () -> Void
     let onBringToFront: () -> Void
     let onSendToBack: () -> Void
+    let onToggleHidden: () -> Void
+    let onToggleLocked: () -> Void
+    let onOpacityDown: () -> Void
+    let onOpacityUp: () -> Void
+    let onCornerDown: () -> Void
+    let onCornerUp: () -> Void
+    let onToggleShadow: () -> Void
+    let onToggleStroke: () -> Void
     @ViewBuilder let photoPicker: () -> PhotoPicker
+
+    private var selectedElement: CanvasElement? {
+        document?.elements.first { $0.id == selectedElementID }
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -918,8 +1090,9 @@ private struct EditorToolPanel<PhotoPicker: View>: View {
                         .buttonStyle(.plain)
 
                         Button(action: onEffect) {
-                            EditorToolItem(icon: "sparkles", title: "Effect")
+                            EditorToolItem(icon: "sparkles", title: "Effect", disabled: selectedElementID == nil)
                         }
+                        .disabled(selectedElementID == nil)
                         .buttonStyle(.plain)
 
                         Button(action: onSticker) {
@@ -947,35 +1120,31 @@ private struct EditorToolPanel<PhotoPicker: View>: View {
                         }
                         .buttonStyle(.plain)
                     case .layer:
-                        Button(action: onBringForward) {
-                            EditorToolItem(icon: "arrow.up.square", title: "Forward", disabled: selectedElementID == nil)
+                        if let document {
+                            ForEach(document.elements.sorted { $0.zIndex > $1.zIndex }) { element in
+                                LayerRow(
+                                    element: element,
+                                    selected: selectedElementID == element.id,
+                                    onSelect: { onSelect(element.id) }
+                                )
+                            }
                         }
-                        .disabled(selectedElementID == nil)
-                        .buttonStyle(.plain)
 
-                        Button(action: onSendBackward) {
-                            EditorToolItem(icon: "arrow.down.square", title: "Backward", disabled: selectedElementID == nil)
-                        }
-                        .disabled(selectedElementID == nil)
-                        .buttonStyle(.plain)
-
-                        Button(action: onBringToFront) {
-                            EditorToolItem(icon: "square.3.layers.3d.top.filled", title: "Top", disabled: selectedElementID == nil)
-                        }
-                        .disabled(selectedElementID == nil)
-                        .buttonStyle(.plain)
-
-                        Button(action: onSendToBack) {
-                            EditorToolItem(icon: "square.3.layers.3d.bottom.filled", title: "Bottom", disabled: selectedElementID == nil)
-                        }
-                        .disabled(selectedElementID == nil)
-                        .buttonStyle(.plain)
-
-                        Button(action: onDelete) {
-                            EditorToolItem(icon: "trash", title: "Delete", disabled: selectedElementID == nil)
-                        }
-                        .disabled(selectedElementID == nil)
-                        .buttonStyle(.plain)
+                        layerButton("arrow.up.square", "Forward", action: onBringForward)
+                        layerButton("arrow.down.square", "Backward", action: onSendBackward)
+                        layerButton("eye", selectedElement?.hidden == true ? "Show" : "Hide", action: onToggleHidden)
+                        layerButton(selectedElement?.locked == true ? "lock.open" : "lock", selectedElement?.locked == true ? "Unlock" : "Lock", action: onToggleLocked)
+                        layerButton("trash", "Delete", action: onDelete)
+                    case .effect:
+                        effectButton("shadow", "Shadow", active: selectedElement?.shadow == true, action: onToggleShadow)
+                        effectButton("pencil.and.outline", "Stroke", active: selectedElement?.stroke == true, action: onToggleStroke)
+                        effectButton("minus.circle", "Opacity-", action: onOpacityDown)
+                        effectButton("plus.circle", "Opacity+", action: onOpacityUp)
+                        effectButton("rectangle.compress.vertical", "Corner-", action: onCornerDown)
+                        effectButton("rectangle.expand.vertical", "Corner+", action: onCornerUp)
+                    case .brush:
+                        EditorToolItem(icon: "paintbrush.pointed.fill", title: "Draw")
+                        EditorToolItem(icon: "hand.draw", title: "On Canvas")
                     case .more:
                         Button(action: onBrush) {
                             EditorToolItem(icon: "scribble.variable", title: "Stroke")
@@ -1007,19 +1176,38 @@ private struct EditorToolPanel<PhotoPicker: View>: View {
         .frame(height: 118)
         .background(Color.editorPeach)
     }
+
+    private func layerButton(_ icon: String, _ title: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            EditorToolItem(icon: icon, title: title, disabled: selectedElementID == nil)
+        }
+        .disabled(selectedElementID == nil)
+        .buttonStyle(.plain)
+    }
+
+    private func effectButton(_ icon: String, _ title: String, active: Bool = false, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            EditorToolItem(icon: icon, title: title, disabled: selectedElementID == nil, active: active)
+        }
+        .disabled(selectedElementID == nil)
+        .buttonStyle(.plain)
+    }
 }
 
 private struct EditorToolItem: View {
     let icon: String
     let title: String
     var disabled = false
+    var active = false
 
     var body: some View {
         VStack(spacing: 6) {
             Image(systemName: icon)
                 .font(.system(size: 34, weight: .semibold))
-                .foregroundStyle(disabled ? Color.clay.opacity(0.28) : Color.clay)
+                .foregroundStyle(disabled ? Color.clay.opacity(0.28) : (active ? Color.paper : Color.clay))
                 .frame(width: 62, height: 50)
+                .background(active ? Color.clay : Color.clear)
+                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
 
             Text(title)
                 .font(.system(size: 14, weight: .medium, design: .rounded))
@@ -1029,6 +1217,64 @@ private struct EditorToolItem: View {
                 .frame(width: 84)
         }
         .frame(width: 84, height: 86)
+    }
+}
+
+private struct LayerRow: View {
+    let element: CanvasElement
+    let selected: Bool
+    let onSelect: () -> Void
+
+    var body: some View {
+        Button(action: onSelect) {
+            VStack(spacing: 5) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .fill(selected ? Color.clay.opacity(0.18) : Color.paper.opacity(0.62))
+                        .frame(width: 72, height: 48)
+                        .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).stroke(selected ? Color.clay : Color.lineSoft, lineWidth: 1.4))
+
+                    Image(systemName: icon)
+                        .font(.system(size: 21, weight: .semibold))
+                        .foregroundStyle(element.hidden ? Color.clay.opacity(0.28) : Color.clay)
+
+                    if element.locked {
+                        Image(systemName: "lock.fill")
+                            .font(.system(size: 11, weight: .bold))
+                            .foregroundStyle(Color.clay)
+                            .offset(x: 24, y: -14)
+                    }
+                }
+
+                Text(title)
+                    .font(.system(size: 11, weight: .medium, design: .rounded))
+                    .foregroundStyle(Color.clay)
+                    .lineLimit(1)
+                    .frame(width: 78)
+            }
+            .frame(width: 82, height: 86)
+        }
+        .buttonStyle(.plain)
+    }
+
+    private var icon: String {
+        switch element.kind {
+        case .image: return "photo"
+        case .sticker: return element.symbol ?? "sparkles"
+        case .text: return "textformat"
+        case .tape: return "rectangle.on.rectangle.angled"
+        case .brush: return "paintbrush.pointed"
+        case .wordArt: return "textformat.alt"
+        }
+    }
+
+    private var title: String {
+        switch element.kind {
+        case .text, .wordArt:
+            return element.text?.isEmpty == false ? String(element.text!.prefix(8)) : element.kind.rawValue
+        default:
+            return element.kind.rawValue
+        }
     }
 }
 

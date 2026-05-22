@@ -51,6 +51,7 @@ final class NotebookRepository: ObservableObject {
     func ensureEditableCanvas(for pageID: UUID) {
         guard let index = pages.firstIndex(where: { $0.id == pageID }) else { return }
         guard pages[index].canvasDocument.elements.isEmpty else { return }
+        objectWillChange.send()
         pages[index].canvasDocument.background = CanvasBackground(colorA: "#FFFFFF", colorB: "#FFFFFF")
         save()
     }
@@ -207,23 +208,11 @@ final class NotebookRepository: ObservableObject {
     }
 
     func addEffect(to pageID: UUID) {
+        guard let selectedElementID else { return }
         storeUndoSnapshot(for: pageID)
-        mutatePage(pageID) { page in
-            let zIndex = (page.canvasDocument.elements.map(\.zIndex).max() ?? 0) + 1
-            page.canvasDocument.elements.append(
-                CanvasElement(
-                    kind: .sticker,
-                    symbol: "wand.and.sparkles",
-                    x: CGFloat(Int.random(in: 300...780)),
-                    y: CGFloat(Int.random(in: 360...980)),
-                    width: 260,
-                    height: 220,
-                    rotation: Double.random(in: -12...12),
-                    zIndex: zIndex,
-                    opacity: 0.82,
-                    colorHex: "#D99A8C"
-                )
-            )
+        mutateElement(selectedElementID, on: pageID) { element in
+            element.shadow.toggle()
+            element.stroke.toggle()
         }
     }
 
@@ -247,20 +236,42 @@ final class NotebookRepository: ObservableObject {
     }
 
     func addBrushStroke(to pageID: UUID) {
+        let points = [
+            CGPoint(x: 230, y: 740),
+            CGPoint(x: 330, y: 650),
+            CGPoint(x: 470, y: 710),
+            CGPoint(x: 620, y: 790),
+            CGPoint(x: 820, y: 700)
+        ]
+        addBrushStroke(points, to: pageID)
+    }
+
+    func addBrushStroke(_ points: [CGPoint], to pageID: UUID) {
+        guard points.count > 1 else { return }
         storeUndoSnapshot(for: pageID)
         mutatePage(pageID) { page in
             let zIndex = (page.canvasDocument.elements.map(\.zIndex).max() ?? 0) + 1
+            let minX = points.map(\.x).min() ?? 0
+            let maxX = points.map(\.x).max() ?? 0
+            let minY = points.map(\.y).min() ?? 0
+            let maxY = points.map(\.y).max() ?? 0
+            let padding: CGFloat = 70
+            let originX = minX - padding
+            let originY = minY - padding
+            let normalized = points.map { CodablePoint(x: $0.x - originX, y: $0.y - originY) }
             page.canvasDocument.elements.append(
                 CanvasElement(
                     kind: .brush,
-                    x: 540,
-                    y: CGFloat(Int.random(in: 460...1040)),
-                    width: 620,
-                    height: 170,
-                    rotation: Double.random(in: -7...7),
+                    x: (minX + maxX) / 2,
+                    y: (minY + maxY) / 2,
+                    width: max(maxX - minX + padding * 2, 120),
+                    height: max(maxY - minY + padding * 2, 120),
+                    rotation: 0,
                     zIndex: zIndex,
                     opacity: 0.72,
-                    colorHex: ["#B77255", "#6F9D86", "#D6A858", "#7E8EAB"].randomElement() ?? "#B77255"
+                    colorHex: ["#B77255", "#6F9D86", "#D6A858", "#7E8EAB"].randomElement() ?? "#B77255",
+                    brushWidth: 46,
+                    brushPoints: normalized
                 )
             )
         }
@@ -296,6 +307,7 @@ final class NotebookRepository: ObservableObject {
 
     func moveElement(_ elementID: UUID, on pageID: UUID, to position: CGPoint) {
         mutateElement(elementID, on: pageID, autosave: false) { element in
+            guard !element.locked else { return }
             element.x = min(max(position.x, 80), 1000)
             element.y = min(max(position.y, 80), 1360)
         }
@@ -303,6 +315,7 @@ final class NotebookRepository: ObservableObject {
 
     func scaleElement(_ elementID: UUID, on pageID: UUID, by factor: CGFloat) {
         mutateElement(elementID, on: pageID) { element in
+            guard !element.locked else { return }
             element.width = min(max(element.width * factor, 86), 980)
             element.height = min(max(element.height * factor, 64), 1200)
             element.fontSize = min(max(element.fontSize * factor, 24), 180)
@@ -311,12 +324,14 @@ final class NotebookRepository: ObservableObject {
 
     func rotateElement(_ elementID: UUID, on pageID: UUID, by degrees: Double) {
         mutateElement(elementID, on: pageID) { element in
+            guard !element.locked else { return }
             element.rotation += degrees
         }
     }
 
     func transformElement(_ elementID: UUID, on pageID: UUID, scale: CGFloat, rotation: Double) {
         mutateElement(elementID, on: pageID, autosave: false) { element in
+            guard !element.locked else { return }
             element.width = min(max(element.width * scale, 86), 980)
             element.height = min(max(element.height * scale, 64), 1200)
             element.fontSize = min(max(element.fontSize * scale, 24), 180)
@@ -401,9 +416,52 @@ final class NotebookRepository: ObservableObject {
         normalizeLayerOrder(on: pageID)
     }
 
+    func toggleHidden(_ elementID: UUID, on pageID: UUID) {
+        storeUndoSnapshot(for: pageID)
+        mutateElement(elementID, on: pageID) { element in
+            element.hidden.toggle()
+        }
+    }
+
+    func toggleLocked(_ elementID: UUID, on pageID: UUID) {
+        storeUndoSnapshot(for: pageID)
+        mutateElement(elementID, on: pageID) { element in
+            element.locked.toggle()
+        }
+    }
+
+    func updateOpacity(_ elementID: UUID, on pageID: UUID, delta: Double) {
+        storeUndoSnapshot(for: pageID)
+        mutateElement(elementID, on: pageID) { element in
+            element.opacity = min(max(element.opacity + delta, 0.2), 1)
+        }
+    }
+
+    func updateCornerRadius(_ elementID: UUID, on pageID: UUID, delta: CGFloat) {
+        storeUndoSnapshot(for: pageID)
+        mutateElement(elementID, on: pageID) { element in
+            element.cornerRadius = min(max(element.cornerRadius + delta, 0), 80)
+        }
+    }
+
+    func toggleShadow(_ elementID: UUID, on pageID: UUID) {
+        storeUndoSnapshot(for: pageID)
+        mutateElement(elementID, on: pageID) { element in
+            element.shadow.toggle()
+        }
+    }
+
+    func toggleStroke(_ elementID: UUID, on pageID: UUID) {
+        storeUndoSnapshot(for: pageID)
+        mutateElement(elementID, on: pageID) { element in
+            element.stroke.toggle()
+        }
+    }
+
     func undo(pageID: UUID) {
         guard var stack = undoStacks[pageID], let previous = stack.popLast() else { return }
         guard let index = pages.firstIndex(where: { $0.id == pageID }) else { return }
+        objectWillChange.send()
         redoStacks[pageID, default: []].append(pages[index].canvasDocument)
         pages[index].canvasDocument = previous
         pages[index].updatedAt = Date()
@@ -415,6 +473,7 @@ final class NotebookRepository: ObservableObject {
     func redo(pageID: UUID) {
         guard var stack = redoStacks[pageID], let next = stack.popLast() else { return }
         guard let index = pages.firstIndex(where: { $0.id == pageID }) else { return }
+        objectWillChange.send()
         undoStacks[pageID, default: []].append(pages[index].canvasDocument)
         pages[index].canvasDocument = next
         pages[index].updatedAt = Date()
@@ -465,6 +524,7 @@ final class NotebookRepository: ObservableObject {
 
     private func mutatePage(_ pageID: UUID, autosave: Bool = true, mutation: (inout JournalPage) -> Void) {
         guard let index = pages.firstIndex(where: { $0.id == pageID }) else { return }
+        objectWillChange.send()
         mutation(&pages[index])
         pages[index].updatedAt = Date()
         pages[index].canvasDocument.updatedAt = Date()
@@ -476,6 +536,7 @@ final class NotebookRepository: ObservableObject {
 
     private func touchNotebook(_ notebookID: UUID) {
         guard let index = notebooks.firstIndex(where: { $0.id == notebookID }) else { return }
+        objectWillChange.send()
         notebooks[index].updatedAt = Date()
     }
 
