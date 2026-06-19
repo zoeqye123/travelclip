@@ -1,0 +1,220 @@
+{
+  "templates": [
+    {
+      "id": "rail-vintage",
+      "kind": "train",
+      "title": "Vintage Rail",
+      "headline": "RAIL PASSAGE TICKET",
+      "accentHex": "#B44D35",
+      "paperHex": "#F9F1E4",
+      "fields": {
+        "origin": "SHANGHAI",
+        "destination": "HANGZHOU",
+        "date": "22 MAY 2026",
+        "time": "08:45",
+        "seat": "CAR 03 / 12A",
+        "gate": "7B",
+        "className": "SECOND",
+        "reference": "NO. A12-045"
+      }
+    },
+    {
+      "id": "rail-local",
+      "kind": "train",
+      "title": "Local Line",
+      "headline": "LOCAL TRAIN TICKET",
+      "accentHex": "#6F8A64",
+      "paperHex": "#F4F4E8",
+      "fields": {
+        "origin": "SHENZHEN",
+        "destination": "GUANGZHOU",
+        "date": "23 MAY 2026",
+        "time": "09:18",
+        "seat": "05C",
+        "gate": "A3",
+        "className": "STANDARD",
+        "reference": "RAIL 2305"
+      }
+    },
+    {
+      "id": "rail-sleeper",
+      "kind": "train",
+      "title": "Night Sleeper",
+      "headline": "NIGHT RAIL PASS",
+      "accentHex": "#384C70",
+      "paperHex": "#EEF1F7",
+      "fields": {
+        "origin": "BEIJING",
+        "destination": "XI'AN",
+        "date": "28 MAY 2026",
+        "time": "22:10",
+        "seat": "BUNK 12",
+        "gate": "9",
+        "className": "SLEEPER",
+        "reference": "NIGHT 891"
+      }
+    },
+    {
+      "id": "air-boarding",
+      "kind": "flight",
+      "title": "Boarding Pass",
+      "headline": "BOARDING PASS",
+      "accentHex": "#2F6F8F",
+      "paperHex": "#F3F7FA",
+      "fields": {
+        "origin": "SZX",
+        "destination": "NRT",
+        "date": "24 MAY 2026",
+        "time": "13:20",
+        "seat": "18A",
+        "gate": "G12",
+        "className": "ECONOMY",
+        "reference": "FLIGHT TC 726"
+      }
+    },
+    {
+      "id": "air-luggage",
+      "kind": "flight",
+      "title": "Luggage Tag",
+      "headline": "AIRLINE BAG TAG",
+      "accentHex": "#587C9B",
+      "paperHex": "#F6FAFC",
+      "fields": {
+        "origin": "SZX",
+        "destination": "BKK",
+        "date": "29 MAY 2026",
+        "time": "16:35",
+        "seat": "22F",
+        "gate": "B08",
+        "className": "ECONOMY",
+        "reference": "BAG 0704"
+      }
+    },
+    {
+      "id": "air-retro",
+      "kind": "flight",
+      "title": "Retro Air",
+      "headline": "SKY PASSAGE",
+      "accentHex": "#A0644B",
+      "paperHex": "#FFF4E8",
+      "fields": {
+        "origin": "HKG",
+        "destination": "TPE",
+        "date": "30 MAY 2026",
+        "time": "11:05",
+        "seat": "04A",
+        "gate": "C16",
+        "className": "BUSINESS",
+        "reference": "SKY 156"
+      }
+    },
+    {
+      "id": "cinema-stub",
+      "kind": "movie",
+      "title": "Cinema Stub",
+      "headline": "CINEMA TICKET",
+      "accentHex": "#6D4C8D",
+      "paperHex": "#FFF2D8",
+      "fields": {
+        "origin": "STUDIO 6",
+        "destination": "MIDNIGHT SHOW",
+        "date": "25 MAY 2026",
+        "time": "21:30",
+        "seat": "ROW F / 09",
+        "gate": "HALL 2",
+        "className": "ADMIT ONE",
+        "reference": "NO. M88-109"
+      }
+    },
+    {
+      "id": "cinema-matinee",
+      "kind": "movie",
+      "title": "Matinee",
+      "headline": "MATINEE ADMISSION",
+      "accentHex": "#C4563F",
+      "paperHex": "#FFF7E6",
+      "fields": {
+        "origin": "PALACE CINEMA",
+        "destination": "AFTERNOON SHOW",
+        "date": "24 MAY 2026",
+        "time": "14:20",
+        "seat": "ROW C / 06",
+        "gate": "SCREEN 3",
+        "className": "ADMIT ONE",
+        "reference": "MAT 024"
+      }
+    },
+    {
+      "id": "cinema-premiere",
+      "kind": "movie",
+      "title": "Premiere",
+      "headline": "PREMIERE NIGHT",
+      "accentHex": "#2F2A35",
+      "paperHex": "#F8EFD8",
+      "fields": {
+        "origin": "GRAND THEATRE",
+        "destination": "OPENING NIGHT",
+        "date": "26 MAY 2026",
+        "time": "20:00",
+        "seat": "BALCONY 12",
+        "gate": "HALL 1",
+        "className": "VIP",
+        "reference": "PRM 618"
+      }
+    },
+    {
+      "id": "ferry-keepsake",
+      "kind": "ferry",
+      "title": "Ferry Keepsake",
+      "headline": "FERRY PASSAGE",
+      "accentHex": "#2F7D70",
+      "paperHex": "#EEF8F2",
+      "fields": {
+        "origin": "HONG KONG",
+        "destination": "MACAU",
+        "date": "26 MAY 2026",
+        "time": "10:15",
+        "seat": "DECK B / 21",
+        "gate": "PIER 4",
+        "className": "WINDOW",
+        "reference": "SEA 04-221"
+      }
+    },
+    {
+      "id": "ferry-island",
+      "kind": "ferry",
+      "title": "Island Hop",
+      "headline": "ISLAND FERRY PASS",
+      "accentHex": "#4D8B93",
+      "paperHex": "#EEF8F8",
+      "fields": {
+        "origin": "KOWLOON",
+        "destination": "CHEUNG CHAU",
+        "date": "27 MAY 2026",
+        "time": "12:40",
+        "seat": "OPEN DECK",
+        "gate": "PIER 5",
+        "className": "DAY PASS",
+        "reference": "ISLE 527"
+      }
+    },
+    {
+      "id": "ferry-night",
+      "kind": "ferry",
+      "title": "Night Ferry",
+      "headline": "NIGHT SEA PASSAGE",
+      "accentHex": "#3D5364",
+      "paperHex": "#F0F4F5",
+      "fields": {
+        "origin": "SHENZHEN",
+        "destination": "ZHUHAI",
+        "date": "31 MAY 2026",
+        "time": "19:25",
+        "seat": "CABIN 08",
+        "gate": "PIER 2",
+        "className": "CABIN",
+        "reference": "SEA 312"
+      }
+    }
+  ]
+}

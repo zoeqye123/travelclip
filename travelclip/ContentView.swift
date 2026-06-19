@@ -2508,8 +2508,11 @@ private struct CanvasScrollContainer<Content: View>: UIViewRepresentable {
         (scrollView as? FittingScrollView)?.viewportGesturesEnabled = scrollEnabled
         (scrollView as? FittingScrollView)?.panExclusionRects = panExclusionRects
         scrollView.isScrollEnabled = true
-        scrollView.pinchGestureRecognizer?.isEnabled = true
-        scrollView.panGestureRecognizer.isEnabled = true
+        scrollView.pinchGestureRecognizer?.isEnabled = scrollEnabled
+        scrollView.panGestureRecognizer.isEnabled = scrollEnabled
+        if !scrollEnabled {
+            context.coordinator.notifyZooming(false)
+        }
 
         guard scrollView.bounds.width > 0, scrollView.bounds.height > 0 else {
             context.coordinator.pageID = pageID
@@ -2690,7 +2693,7 @@ private struct CanvasScrollContainer<Content: View>: UIViewRepresentable {
             )
         }
 
-        private func notifyZooming(_ isZooming: Bool) {
+        func notifyZooming(_ isZooming: Bool) {
             guard zoomingNotified != isZooming else { return }
             zoomingNotified = isZooming
             DispatchQueue.main.async { [weak self] in
@@ -2834,6 +2837,8 @@ private struct CanvasWorkspace: View {
             selectionDragStartRect = nil
             selectionDragTranslation = nil
             transformingElementIDs = []
+            activeCanvasInteractionCount = 0
+            activeGuides = nil
         }
         .onChange(of: selectedElementIDs) { _ in
             elementTransformPreview = elementTransformPreview.filter { selectedElementIDs.contains($0.key) }
@@ -2846,6 +2851,8 @@ private struct CanvasWorkspace: View {
                 selectionDragTranslation = nil
             }
             transformingElementIDs = transformingElementIDs.intersection(selectedElementIDs)
+            activeCanvasInteractionCount = 0
+            activeGuides = nil
         }
     }
 
@@ -2875,7 +2882,7 @@ private struct CanvasWorkspace: View {
                     .rotationEffect(.degrees(renderedElement.rotation))
                     .position(x: renderedElement.x * effectiveScale, y: renderedElement.y * effectiveScale)
                     .opacity(renderedElement.opacity)
-                    .gesture(
+                    .highPriorityGesture(
                         DragGesture(minimumDistance: 8, coordinateSpace: .named("canvasSpace"))
                             .onChanged { value in
                                 guard !element.locked,
@@ -3088,8 +3095,7 @@ private struct CanvasWorkspace: View {
     @ViewBuilder
     private var fixedSelectionToolbar: some View {
         if !selectedElementIDs.isEmpty,
-           activeCanvasTool == nil,
-           !isCanvasInteracting {
+           activeCanvasTool == nil {
             FloatingSelectionToolbar(
                 selectedCount: selectedElementIDs.count,
                 selectedElement: selectedElements.count == 1 ? selectedElements[0] : nil,

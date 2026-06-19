@@ -1,0 +1,18 @@
+{
+  "displayName": "Watercolor",
+  "tags": ["watercolor", "travel", "tape"],
+  "items": {
+    "watercolor-travel-01.png": {
+      "title": "Watercolor Route",
+      "tags": ["map", "plane", "compass"]
+    },
+    "watercolor-travel-02.png": {
+      "title": "Watercolor Flight",
+      "tags": ["plane", "star", "travel"]
+    },
+    "watercolor-travel-03.png": {
+      "title": "Watercolor Map",
+      "tags": ["map", "compass", "travel"]
+    }
+  }
+}

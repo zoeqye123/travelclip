@@ -1,0 +1,18 @@
+{
+  "displayName": "Geometric",
+  "tags": ["geometric", "travel", "tape"],
+  "items": {
+    "geometric-travel-01.png": {
+      "title": "Geometric Transit",
+      "tags": ["plane", "shape", "star"]
+    },
+    "geometric-travel-02.png": {
+      "title": "Geometric Map",
+      "tags": ["map", "shape", "compass"]
+    },
+    "geometric-travel-03.png": {
+      "title": "Geometric Flight",
+      "tags": ["plane", "compass", "travel"]
+    }
+  }
+}
