@@ -85,6 +85,9 @@ def main() -> None:
     require(r"viewportTransform\.displayElement\(renderedElement\)", source, "Canvas elements must render through the shared viewport transform.")
     require(r"viewportTransform\.documentPoint\(location\)", source, "Connector endpoint dragging must convert display coordinates through the shared viewport transform.")
     require(r"transform:\s*CanvasViewportTransform", source, "Canvas capture overlays must receive the shared viewport transform.")
+    require(r"CanvasWorkspace\([\s\S]*?\)\s*\.frame\(width:\s*proxy\.size\.width,\s*height:\s*proxy\.size\.height\)", source, "CanvasWorkspace must fill the measured editor viewport instead of being reduced by tool panels.")
+    require(r"ZStack\(alignment:\s*\.bottom\)[\s\S]*?CanvasWorkspace\([\s\S]*?EditorToolPanel\(", source, "Editor tool panel must overlay the fixed canvas viewport instead of resizing it.")
+    forbid(r"let\s+canvasHeight\s*=|proxy\.size\.height\s*-\s*panelHeight", source, "Tool panels must not subtract from the CanvasWorkspace viewport height.")
 
     workspace = require_block(r"private struct CanvasWorkspace: View \{(?P<body>.*?)\n\}\n\nprivate struct CanvasSurface", source, "CanvasWorkspace not found.")
     if workspace is not None:

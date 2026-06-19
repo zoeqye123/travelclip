@@ -1646,9 +1646,8 @@ private struct CanvasEditorView: View {
 
                 GeometryReader { proxy in
                     let panelHeight: CGFloat = activePanel == .multi ? 124 : 90
-                    let canvasHeight = max(0, proxy.size.height - panelHeight)
 
-                    VStack(spacing: 0) {
+                    ZStack(alignment: .bottom) {
                         CanvasWorkspace(
                             document: document,
                             selectedElementID: selectedElementID,
@@ -1777,7 +1776,7 @@ private struct CanvasEditorView: View {
                                 }
                             }
                         )
-                        .frame(width: proxy.size.width, height: canvasHeight)
+                        .frame(width: proxy.size.width, height: proxy.size.height)
 
                         EditorToolPanel(
                             activePanel: activePanel,
