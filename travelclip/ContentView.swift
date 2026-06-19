@@ -1127,6 +1127,14 @@ private struct TrackedEditorToolButton<Label: View>: View {
     }
 }
 
+private func telemetryIDSegment(_ value: String) -> String {
+    let normalized = value
+        .lowercased()
+        .replacingOccurrences(of: "[^a-z0-9]+", with: "-", options: .regularExpression)
+        .trimmingCharacters(in: CharacterSet(charactersIn: "-"))
+    return normalized.isEmpty ? "unknown" : normalized
+}
+
 private struct TapePlacementBar: View {
     let title: String
     let onDone: () -> Void
@@ -4970,13 +4978,12 @@ private struct MaterialStoreHomeView: View {
                 .foregroundStyle(Color.ink)
 
             if !query.isEmpty {
-                Button {
+                TrackedEditorToolButton(componentID: "store.home.search.clear", disabled: false, action: {
                     query = ""
-                } label: {
+                }) {
                     Image(systemName: "xmark.circle.fill")
                         .foregroundStyle(Color.inkSoft)
                 }
-                .buttonStyle(.plain)
             }
         }
         .padding(.horizontal, 12)
@@ -4990,9 +4997,9 @@ private struct MaterialStoreHomeView: View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
                 ForEach(categories) { category in
-                    Button {
+                    TrackedEditorToolButton(componentID: "store.home.category.\(category.rawValue)", disabled: false, action: {
                         selectedCategory = category
-                    } label: {
+                    }) {
                         VStack(spacing: 5) {
                             Image(systemName: category.icon)
                                 .font(.system(size: 21, weight: .bold))
@@ -5010,7 +5017,6 @@ private struct MaterialStoreHomeView: View {
                                 .frame(width: 66)
                         }
                     }
-                    .buttonStyle(.plain)
                 }
             }
             .padding(.vertical, 2)
@@ -5318,9 +5324,11 @@ private struct CanvasAssetPickerSheet: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button("Done", action: onCancel)
-                        .font(.system(size: 15, weight: .semibold, design: .rounded))
-                        .foregroundStyle(Color.clay)
+                    TrackedEditorToolButton(componentID: "asset.sheet.done", disabled: false, action: onCancel) {
+                        Text("Done")
+                            .font(.system(size: 15, weight: .semibold, design: .rounded))
+                            .foregroundStyle(Color.clay)
+                    }
                 }
             }
         }
@@ -5333,7 +5341,7 @@ private struct TemplateChoiceCard: View {
     let action: () -> Void
 
     var body: some View {
-        Button(action: action) {
+        TrackedEditorToolButton(componentID: "asset.template.\(telemetryIDSegment(template.id))", disabled: false, action: action) {
             VStack(alignment: .leading, spacing: 8) {
                 CanvasTemplatePreview(template: template, imageURL: imageURL)
                     .aspectRatio(0.72, contentMode: .fit)
@@ -5350,7 +5358,6 @@ private struct TemplateChoiceCard: View {
             .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(Color.lineSoft, lineWidth: 1.1))
         }
-        .buttonStyle(.plain)
     }
 }
 
@@ -5379,7 +5386,7 @@ private struct TextPresetChoiceCard: View {
     let action: () -> Void
 
     var body: some View {
-        Button(action: action) {
+        TrackedEditorToolButton(componentID: "asset.text-preset.\(telemetryIDSegment(preset.id))", disabled: false, action: action) {
             VStack(alignment: .leading, spacing: 9) {
                 Text(preset.previewText)
                     .font(FontResolver.swiftUIFont(name: preset.style.fontName, size: min(preset.style.fontSize, 34), bold: preset.style.bold, italic: preset.style.italic))
@@ -5410,7 +5417,6 @@ private struct TextPresetChoiceCard: View {
             .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(Color.lineSoft, lineWidth: 1.1))
         }
-        .buttonStyle(.plain)
     }
 
     private var textForeground: some ShapeStyle {
@@ -5477,7 +5483,7 @@ private struct BrushPresetChoiceCard: View {
     }
 
     var body: some View {
-        Button(action: action) {
+        TrackedEditorToolButton(componentID: "asset.brush-preset.\(telemetryIDSegment(preset.id))", disabled: false, action: action) {
             VStack(alignment: .leading, spacing: 9) {
                 BrushElement(element: previewElement.displayScaled(by: 0.18))
                     .frame(maxWidth: .infinity)
@@ -5503,7 +5509,6 @@ private struct BrushPresetChoiceCard: View {
             .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(Color.lineSoft, lineWidth: 1.1))
         }
-        .buttonStyle(.plain)
     }
 }
 
@@ -5730,9 +5735,9 @@ private struct MaterialPanel: View {
 
     private var storeSearchRow: some View {
         HStack(spacing: 10) {
-            Button {
+            TrackedEditorToolButton(componentID: "material.panel.open-store", disabled: false, action: {
                 showingStorePage = true
-            } label: {
+            }) {
                 HStack(spacing: 7) {
                     Image(systemName: "storefront")
                         .font(.system(size: 15, weight: .bold))
@@ -5745,7 +5750,6 @@ private struct MaterialPanel: View {
                 .background(Color.clay)
                 .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
             }
-            .buttonStyle(.plain)
 
             searchField
         }
@@ -5764,13 +5768,12 @@ private struct MaterialPanel: View {
                 .foregroundStyle(Color.ink)
 
             if !query.isEmpty {
-                Button {
+                TrackedEditorToolButton(componentID: "material.panel.search.clear", disabled: false, action: {
                     query = ""
-                } label: {
+                }) {
                     Image(systemName: "xmark.circle.fill")
                         .foregroundStyle(Color.inkSoft)
                 }
-                .buttonStyle(.plain)
             }
         }
         .padding(.horizontal, 12)
@@ -5785,9 +5788,9 @@ private struct MaterialPanel: View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
                 ForEach(categoryOptions) { category in
-                    Button {
+                    TrackedEditorToolButton(componentID: "material.panel.category.\(telemetryIDSegment(category.id))", disabled: false, action: {
                         selectedCategoryID = category.id
-                    } label: {
+                    }) {
                         ZStack(alignment: .bottomTrailing) {
                             MaterialCategoryThumbnail(category: category, selected: selectedCategoryID == category.id)
                             if category.count > 0 && selectedCategoryID == category.id {
@@ -5803,7 +5806,6 @@ private struct MaterialPanel: View {
                         }
                         .accessibilityLabel(category.title)
                     }
-                    .buttonStyle(.plain)
                 }
             }
             .padding(.vertical, 2)
@@ -6188,13 +6190,12 @@ private struct MaterialStorePage: View {
                 .foregroundStyle(Color.ink)
 
             if !query.isEmpty {
-                Button {
+                TrackedEditorToolButton(componentID: "material.store.search.clear", disabled: false, action: {
                     query = ""
-                } label: {
+                }) {
                     Image(systemName: "xmark.circle.fill")
                         .foregroundStyle(Color.inkSoft)
                 }
-                .buttonStyle(.plain)
             }
         }
         .padding(.horizontal, 12)
@@ -6209,9 +6210,9 @@ private struct MaterialStorePage: View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
                 ForEach(categoryOptions) { category in
-                    Button {
+                    TrackedEditorToolButton(componentID: "material.store.category.\(telemetryIDSegment(category.id))", disabled: false, action: {
                         selectedCategoryID = category.id
-                    } label: {
+                    }) {
                         ZStack(alignment: .bottomTrailing) {
                             MaterialCategoryThumbnail(category: category, selected: selectedCategoryID == category.id)
                             if category.count > 0 && selectedCategoryID == category.id {
@@ -6227,7 +6228,6 @@ private struct MaterialStorePage: View {
                         }
                         .accessibilityLabel(category.title)
                     }
-                    .buttonStyle(.plain)
                 }
             }
             .padding(.vertical, 2)
@@ -6251,7 +6251,7 @@ private struct MaterialItemCard: View {
     let action: () -> Void
 
     var body: some View {
-        Button(action: action) {
+        TrackedEditorToolButton(componentID: "asset.material.\(telemetryIDSegment(item.id))", disabled: false, action: action) {
             VStack(alignment: .leading, spacing: 8) {
                 ZStack(alignment: .bottomTrailing) {
                     if let image = CanvasImageCache.shared.image(at: item.fileURL, maxPixelSize: 360) {
@@ -6300,7 +6300,6 @@ private struct MaterialItemCard: View {
             .clipShape(RoundedRectangle(cornerRadius: 13, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: 13, style: .continuous).stroke(Color.lineSoft, lineWidth: 1.1))
         }
-        .buttonStyle(.plain)
     }
 }
 
@@ -6354,7 +6353,7 @@ private struct MaterialStoreShelfItem: View {
     let action: () -> Void
 
     var body: some View {
-        Button(action: action) {
+        TrackedEditorToolButton(componentID: "asset.material-shelf.\(telemetryIDSegment(item.id))", disabled: false, action: action) {
             VStack(alignment: .leading, spacing: 6) {
                 ZStack(alignment: .bottomTrailing) {
                     if let image = CanvasImageCache.shared.image(at: item.fileURL, maxPixelSize: 320) {
@@ -6391,7 +6390,6 @@ private struct MaterialStoreShelfItem: View {
             }
             .frame(width: 108, alignment: .leading)
         }
-        .buttonStyle(.plain)
     }
 }
 
@@ -6425,7 +6423,7 @@ private struct StickerChoiceCard: View {
     let action: () -> Void
 
     var body: some View {
-        Button(action: action) {
+        TrackedEditorToolButton(componentID: "asset.sticker.\(telemetryIDSegment(sticker.id))", disabled: false, action: action) {
             VStack(spacing: 9) {
                 Image(systemName: sticker.symbol)
                     .font(.system(size: 34, weight: .semibold))
@@ -6445,7 +6443,6 @@ private struct StickerChoiceCard: View {
             .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(Color.lineSoft, lineWidth: 1.1))
         }
-        .buttonStyle(.plain)
     }
 }
 
@@ -6470,7 +6467,7 @@ private struct ShapeChoiceCard: View {
     }
 
     var body: some View {
-        Button(action: action) {
+        TrackedEditorToolButton(componentID: "asset.shape.\(telemetryIDSegment(shape.id))", disabled: false, action: action) {
             VStack(spacing: 9) {
                 CanvasShapeElement(element: previewElement.displayScaled(by: 0.2))
                     .frame(width: 86, height: 68)
@@ -6486,7 +6483,6 @@ private struct ShapeChoiceCard: View {
             .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(Color.lineSoft, lineWidth: 1.1))
         }
-        .buttonStyle(.plain)
     }
 }
 
@@ -6496,7 +6492,7 @@ private struct BackgroundChoiceCard: View {
     let action: () -> Void
 
     var body: some View {
-        Button(action: action) {
+        TrackedEditorToolButton(componentID: "asset.background.\(telemetryIDSegment(background.id))", disabled: false, action: action) {
             VStack(alignment: .leading, spacing: 8) {
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
                     .fill(LinearGradient(colors: [Color(hex: background.colorA), Color(hex: background.colorB)], startPoint: .topLeading, endPoint: .bottomTrailing))
@@ -6521,7 +6517,6 @@ private struct BackgroundChoiceCard: View {
             .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(Color.lineSoft, lineWidth: 1.1))
         }
-        .buttonStyle(.plain)
     }
 }
 
@@ -6530,7 +6525,7 @@ private struct TapeChoiceCard: View {
     let action: () -> Void
 
     var body: some View {
-        Button(action: action) {
+        TrackedEditorToolButton(componentID: "asset.tape.\(telemetryIDSegment(tape.id))", disabled: false, action: action) {
             VStack(spacing: 10) {
                 TapeElement(color: Color(hex: tape.colorHex), imageURL: tape.fileURL)
                     .frame(height: 34)
@@ -6549,7 +6544,6 @@ private struct TapeChoiceCard: View {
             .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(Color.lineSoft, lineWidth: 1.1))
         }
-        .buttonStyle(.plain)
     }
 }
 
@@ -6604,13 +6598,12 @@ private struct TapePanel: View {
                 .foregroundStyle(Color.ink)
 
             if !query.isEmpty {
-                Button {
+                TrackedEditorToolButton(componentID: "asset.tape.search.clear", disabled: false, action: {
                     query = ""
-                } label: {
+                }) {
                     Image(systemName: "xmark.circle.fill")
                         .foregroundStyle(Color.inkSoft)
                 }
-                .buttonStyle(.plain)
             }
         }
         .padding(.horizontal, 12)
@@ -6674,7 +6667,7 @@ private struct TapeCategoryChip: View {
     let action: () -> Void
 
     var body: some View {
-        Button(action: action) {
+        TrackedEditorToolButton(componentID: "asset.tape.category.\(telemetryIDSegment(id))", disabled: false, action: action) {
             ZStack(alignment: .bottomTrailing) {
                 ZStack {
                     if let previewTape {
@@ -6705,7 +6698,6 @@ private struct TapeCategoryChip: View {
             }
             .accessibilityLabel(title)
         }
-        .buttonStyle(.plain)
     }
 }
 
@@ -6759,7 +6751,7 @@ private struct TapeStoreShelfItem: View {
     let action: () -> Void
 
     var body: some View {
-        Button(action: action) {
+        TrackedEditorToolButton(componentID: "asset.tape-shelf.\(telemetryIDSegment(tape.id))", disabled: false, action: action) {
             VStack(alignment: .leading, spacing: 7) {
                 ZStack(alignment: .bottomTrailing) {
                     TapeElement(color: Color(hex: tape.colorHex), imageURL: tape.fileURL)
@@ -6790,7 +6782,6 @@ private struct TapeStoreShelfItem: View {
             }
             .frame(width: 168, alignment: .leading)
         }
-        .buttonStyle(.plain)
     }
 }
 
@@ -7320,10 +7311,9 @@ private struct CanvasToolStrip: View {
 
     var body: some View {
         HStack(spacing: 10) {
-            Button(action: onDone) {
+            TrackedEditorToolButton(componentID: "canvas.toolstrip.done", disabled: false, action: onDone) {
                 EditorToolItem(icon: "checkmark.circle.fill", title: "Done", active: true)
             }
-            .buttonStyle(.plain)
 
             VStack(alignment: .leading, spacing: 6) {
                 HStack(spacing: 7) {
@@ -7344,15 +7334,12 @@ private struct CanvasToolStrip: View {
 
             HStack(spacing: 6) {
                 ForEach(colorOptions.prefix(6), id: \.self) { option in
-                    Button {
-                        onColor(option)
-                    } label: {
+                    TrackedEditorToolButton(componentID: "canvas.toolstrip.color.\(option.replacingOccurrences(of: "#", with: ""))", disabled: false, action: { onColor(option) }) {
                         Circle()
                             .fill(Color(hex: option))
                             .frame(width: 26, height: 26)
                             .overlay(Circle().stroke(colorHex == option ? Color.clay : Color.paper, lineWidth: colorHex == option ? 3 : 2))
                     }
-                    .buttonStyle(.plain)
                 }
             }
 
@@ -7363,10 +7350,9 @@ private struct CanvasToolStrip: View {
                 Slider(value: Binding(get: { opacity }, set: onOpacity), in: 0.12...1, step: 0.02)
                     .frame(width: 72)
 
-                Button(action: onBrushLibrary) {
+                TrackedEditorToolButton(componentID: "canvas.toolstrip.brush-library", disabled: false, action: onBrushLibrary) {
                     EditorToolItem(icon: "paintbrush.pointed", title: "Brushes")
                 }
-                .buttonStyle(.plain)
             }
         }
         .padding(.horizontal, 12)
@@ -7433,15 +7419,12 @@ private struct LineStyleToolStrip: View {
 
             HStack(spacing: 6) {
                 ForEach(colorOptions.prefix(5), id: \.self) { colorHex in
-                    Button {
-                        onColor(colorHex)
-                    } label: {
+                    TrackedEditorToolButton(componentID: "canvas.line.color.\(colorHex.replacingOccurrences(of: "#", with: ""))", disabled: false, action: { onColor(colorHex) }) {
                         Circle()
                             .fill(Color(hex: colorHex))
                             .frame(width: 25, height: 25)
                             .overlay(Circle().stroke(element.colorHex == colorHex ? Color.clay : Color.paper, lineWidth: element.colorHex == colorHex ? 3 : 2))
                     }
-                    .buttonStyle(.plain)
                 }
             }
         }
@@ -7453,7 +7436,7 @@ private struct LineStyleToolStrip: View {
     }
 
     private func styleButton(_ icon: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
+        TrackedEditorToolButton(componentID: "canvas.line.width.\(telemetryIDSegment(icon))", disabled: false, action: action) {
             Image(systemName: icon)
                 .font(.system(size: 13, weight: .bold))
                 .foregroundStyle(Color.paper)
@@ -7461,7 +7444,6 @@ private struct LineStyleToolStrip: View {
                 .background(Color.clay)
                 .clipShape(Circle())
         }
-        .buttonStyle(.plain)
     }
 }
 
@@ -7525,7 +7507,7 @@ private struct TapeLengthToolStrip: View {
     }
 
     private func styleButton(_ icon: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
+        TrackedEditorToolButton(componentID: "canvas.tape.length.\(telemetryIDSegment(icon))", disabled: false, action: action) {
             Image(systemName: icon)
                 .font(.system(size: 13, weight: .bold))
                 .foregroundStyle(Color.paper)
@@ -7533,7 +7515,6 @@ private struct TapeLengthToolStrip: View {
                 .background(Color.clay)
                 .clipShape(Circle())
         }
-        .buttonStyle(.plain)
     }
 }
 
@@ -7579,22 +7560,17 @@ private struct ShapeStyleToolStrip: View {
             }
             .frame(width: 88, alignment: .leading)
 
-            Button(action: onToggleStroke) {
+            TrackedEditorToolButton(componentID: "canvas.shape.stroke-toggle", disabled: false, action: onToggleStroke) {
                 EditorToolItem(icon: element.stroke ? "square" : "square.fill", title: element.stroke ? "Fill" : "Stroke", active: element.stroke)
             }
-            .buttonStyle(.plain)
 
-            Button(action: onCornerDown) {
+            TrackedEditorToolButton(componentID: "canvas.shape.corner-down", disabled: cornerDisabled, action: onCornerDown) {
                 EditorToolItem(icon: "minus", title: "Corner-", disabled: cornerDisabled)
             }
-            .buttonStyle(.plain)
-            .disabled(cornerDisabled)
 
-            Button(action: onCornerUp) {
+            TrackedEditorToolButton(componentID: "canvas.shape.corner-up", disabled: cornerDisabled, action: onCornerUp) {
                 EditorToolItem(icon: "plus", title: "Corner+", disabled: cornerDisabled)
             }
-            .buttonStyle(.plain)
-            .disabled(cornerDisabled)
         }
         .padding(.horizontal, 12)
         .frame(height: 64)
@@ -7628,7 +7604,7 @@ private struct LayerRow: View {
     let onSelect: () -> Void
 
     var body: some View {
-        Button(action: onSelect) {
+        TrackedEditorToolButton(componentID: "canvas.layer.\(element.id.uuidString.lowercased())", disabled: false, action: onSelect) {
             VStack(spacing: 4) {
                 ZStack {
                     RoundedRectangle(cornerRadius: 10, style: .continuous)
@@ -7663,7 +7639,6 @@ private struct LayerRow: View {
             }
             .frame(width: 66, height: 68)
         }
-        .buttonStyle(.plain)
     }
 
     private var icon: String {
@@ -7753,36 +7728,39 @@ private struct LinkInputSheet: View {
 
             HStack(spacing: 10) {
                 ForEach(colorOptions, id: \.self) { colorHex in
-                    Button {
+                    TrackedEditorToolButton(componentID: "sheet.link.color.\(colorHex.replacingOccurrences(of: "#", with: ""))", disabled: false, action: {
                         link.colorHex = colorHex
-                    } label: {
+                    }) {
                         Circle()
                             .fill(Color(hex: colorHex))
                             .frame(width: 30, height: 30)
                             .overlay(Circle().stroke(link.colorHex == colorHex ? Color.clay : Color.lineSoft, lineWidth: link.colorHex == colorHex ? 3 : 1))
                     }
-                    .buttonStyle(.plain)
                 }
             }
 
             HStack {
-                Button("Clear") {
+                TrackedEditorToolButton(componentID: "sheet.link.clear", disabled: false, action: {
                     link = LinkCardParameters()
+                }) {
+                    Text("Clear")
+                        .font(.system(size: 16, weight: .medium, design: .rounded))
+                        .foregroundStyle(Color.inkSoft)
                 }
-                .font(.system(size: 16, weight: .medium, design: .rounded))
-                .foregroundStyle(Color.inkSoft)
 
                 Spacer()
 
-                Button("Add Link") {
+                TrackedEditorToolButton(componentID: "sheet.link.confirm", disabled: false, action: {
                     validationMessage = onConfirm() ?? ""
+                }) {
+                    Text("Add Link")
+                        .font(.system(size: 16, weight: .semibold, design: .rounded))
+                        .foregroundStyle(Color.paper)
+                        .padding(.horizontal, 18)
+                        .frame(height: 42)
+                        .background(Color.clay)
+                        .clipShape(Capsule())
                 }
-                    .font(.system(size: 16, weight: .semibold, design: .rounded))
-                    .foregroundStyle(Color.paper)
-                    .padding(.horizontal, 18)
-                    .frame(height: 42)
-                    .background(Color.clay)
-                    .clipShape(Capsule())
             }
         }
         .padding(22)
@@ -7816,21 +7794,25 @@ private struct ElementNoteSheet: View {
                 .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Color.lineSoft, lineWidth: 1.2))
 
             HStack {
-                Button("Clear") {
+                TrackedEditorToolButton(componentID: "sheet.note.clear", disabled: false, action: {
                     note = ""
+                }) {
+                    Text("Clear")
+                        .font(.system(size: 16, weight: .medium, design: .rounded))
+                        .foregroundStyle(Color.inkSoft)
                 }
-                .font(.system(size: 16, weight: .medium, design: .rounded))
-                .foregroundStyle(Color.inkSoft)
 
                 Spacer()
 
-                Button("Save Note", action: onConfirm)
-                    .font(.system(size: 16, weight: .semibold, design: .rounded))
-                    .foregroundStyle(Color.paper)
-                    .padding(.horizontal, 18)
-                    .frame(height: 42)
-                    .background(Color.clay)
-                    .clipShape(Capsule())
+                TrackedEditorToolButton(componentID: "sheet.note.confirm", disabled: false, action: onConfirm) {
+                    Text("Save Note")
+                        .font(.system(size: 16, weight: .semibold, design: .rounded))
+                        .foregroundStyle(Color.paper)
+                        .padding(.horizontal, 18)
+                        .frame(height: 42)
+                        .background(Color.clay)
+                        .clipShape(Capsule())
+                }
             }
         }
         .padding(22)
@@ -7926,14 +7908,14 @@ private struct TicketComposerSheet: View {
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack(spacing: 10) {
                             ForEach(availableKinds, id: \.self) { kind in
-                                Button {
+                                TrackedEditorToolButton(componentID: "sheet.ticket.kind.\(telemetryIDSegment(kind.rawValue))", disabled: false, action: {
                                     selectedKind = kind
                                     if let template = templates.first(where: { $0.kind == kind }) {
                                         selectedTemplateID = template.id
                                         fields = template.fields
                                     }
                                     errorMessage = nil
-                                } label: {
+                                }) {
                                     HStack(spacing: 7) {
                                         Image(systemName: icon(for: kind))
                                             .font(.system(size: 13, weight: .bold))
@@ -7948,7 +7930,6 @@ private struct TicketComposerSheet: View {
                                     .clipShape(Capsule())
                                     .overlay(Capsule().stroke(Color.lineSoft, lineWidth: selectedKind == kind ? 0 : 1))
                                 }
-                                .buttonStyle(.plain)
                             }
                         }
                     }
@@ -7956,12 +7937,12 @@ private struct TicketComposerSheet: View {
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack(spacing: 10) {
                             ForEach(styleTemplates) { template in
-                                Button {
+                                TrackedEditorToolButton(componentID: "sheet.ticket.template.\(telemetryIDSegment(template.id))", disabled: false, action: {
                                     selectedTemplateID = template.id
                                     selectedKind = template.kind
                                     fields = template.fields
                                     errorMessage = nil
-                                } label: {
+                                }) {
                                     Text(template.title)
                                         .font(.system(size: 13, weight: .bold, design: .rounded))
                                         .lineLimit(1)
@@ -7972,7 +7953,6 @@ private struct TicketComposerSheet: View {
                                     .clipShape(Capsule())
                                     .overlay(Capsule().stroke(Color.lineSoft, lineWidth: selectedTemplateID == template.id ? 0 : 1))
                                 }
-                                .buttonStyle(.plain)
                             }
                         }
                     }
@@ -7994,17 +7974,21 @@ private struct TicketComposerSheet: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
-                    Button("Cancel", action: onCancel)
-                        .font(.system(size: 15, weight: .semibold, design: .rounded))
-                        .foregroundStyle(Color.inkSoft)
+                    TrackedEditorToolButton(componentID: "sheet.ticket.cancel", disabled: false, action: onCancel) {
+                        Text("Cancel")
+                            .font(.system(size: 15, weight: .semibold, design: .rounded))
+                            .foregroundStyle(Color.inkSoft)
+                    }
                 }
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button("Add") {
+                    TrackedEditorToolButton(componentID: "sheet.ticket.add", disabled: false, action: {
                         let image = TicketRenderer.render(template: selectedTemplate, fields: fields)
                         errorMessage = onAdd(image)
+                    }) {
+                        Text("Add")
+                            .font(.system(size: 15, weight: .bold, design: .rounded))
+                            .foregroundStyle(Color.clay)
                     }
-                    .font(.system(size: 15, weight: .bold, design: .rounded))
-                    .foregroundStyle(Color.clay)
                 }
             }
         }
@@ -8137,15 +8121,17 @@ private struct TextInputSheet: View {
 
                     Spacer()
 
-                    Button(mode == .wordArt ? "Add" : "Done") {
+                    TrackedEditorToolButton(componentID: "sheet.text.confirm", disabled: false, action: {
                         validationMessage = onConfirm() ?? ""
+                    }) {
+                        Text(mode == .wordArt ? "Add" : "Done")
+                            .font(.system(size: 15, weight: .bold, design: .rounded))
+                            .foregroundStyle(Color.paper)
+                            .padding(.horizontal, 18)
+                            .frame(height: 38)
+                            .background(Color.clay)
+                            .clipShape(Capsule())
                     }
-                    .font(.system(size: 15, weight: .bold, design: .rounded))
-                    .foregroundStyle(Color.paper)
-                    .padding(.horizontal, 18)
-                    .frame(height: 38)
-                    .background(Color.clay)
-                    .clipShape(Capsule())
                 }
 
                 TextRenderPreview(image: previewImage)
@@ -8265,24 +8251,25 @@ private struct TextInputSheet: View {
 
                 HStack(spacing: 10) {
                     ForEach(colorOptions, id: \.self) { colorHex in
-                        Button {
+                        TrackedEditorToolButton(componentID: "sheet.text.color.\(colorHex.replacingOccurrences(of: "#", with: ""))", disabled: false, action: {
                             style.colorHex = colorHex
-                        } label: {
+                        }) {
                             Circle()
                                 .fill(Color(hex: colorHex))
                                 .frame(width: 31, height: 31)
                                 .overlay(Circle().stroke(style.colorHex == colorHex ? Color.clay : Color.lineSoft, lineWidth: style.colorHex == colorHex ? 3 : 1))
                         }
-                        .buttonStyle(.plain)
                     }
                 }
 
                 HStack {
-                    Button("Clear") {
+                    TrackedEditorToolButton(componentID: "sheet.text.clear", disabled: false, action: {
                         text = ""
+                    }) {
+                        Text("Clear")
+                            .font(.system(size: 16, weight: .medium, design: .rounded))
+                            .foregroundStyle(Color.inkSoft)
                     }
-                    .font(.system(size: 16, weight: .medium, design: .rounded))
-                    .foregroundStyle(Color.inkSoft)
 
                     Spacer()
                 }
@@ -8422,20 +8409,23 @@ private struct RenamePageSheet: View {
                 .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(Color.lineSoft, lineWidth: 1.2))
 
             HStack {
-                Button("Cancel", action: onCancel)
-                    .font(.system(size: 16, weight: .medium, design: .rounded))
-                    .foregroundStyle(Color.inkSoft)
+                TrackedEditorToolButton(componentID: "sheet.rename.cancel", disabled: false, action: onCancel) {
+                    Text("Cancel")
+                        .font(.system(size: 16, weight: .medium, design: .rounded))
+                        .foregroundStyle(Color.inkSoft)
+                }
 
                 Spacer()
 
-                Button("Save", action: onConfirm)
-                    .font(.system(size: 16, weight: .semibold, design: .rounded))
-                    .foregroundStyle(Color.paper)
-                    .padding(.horizontal, 18)
-                    .frame(height: 42)
-                    .background(title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? Color.inkSoft : Color.clay)
-                    .clipShape(Capsule())
-                    .disabled(title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                TrackedEditorToolButton(componentID: "sheet.rename.save", disabled: title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, action: onConfirm) {
+                    Text("Save")
+                        .font(.system(size: 16, weight: .semibold, design: .rounded))
+                        .foregroundStyle(Color.paper)
+                        .padding(.horizontal, 18)
+                        .frame(height: 42)
+                        .background(title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? Color.inkSoft : Color.clay)
+                        .clipShape(Capsule())
+                }
             }
         }
         .padding(22)
@@ -8475,7 +8465,7 @@ private struct PageCreateOption: View {
     let action: () -> Void
 
     var body: some View {
-        Button(action: action) {
+        TrackedEditorToolButton(componentID: "sheet.new-page.\(telemetryIDSegment(title))", disabled: false, action: action) {
             VStack(spacing: 10) {
                 Image(systemName: icon)
                     .font(.system(size: 25, weight: .semibold))
@@ -8497,7 +8487,6 @@ private struct PageCreateOption: View {
             .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(Color.lineSoft, lineWidth: 1.2))
         }
-        .buttonStyle(.plain)
     }
 }
 

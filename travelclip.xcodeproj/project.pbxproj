@@ -52,6 +52,7 @@
 			isa = PBXNativeTarget;
 			buildConfigurationList = C560913B2FBB2221008F7F57 /* Build configuration list for PBXNativeTarget "travelclip" */;
 			buildPhases = (
+				0EBE4ECF6CAA49648B840FC1 /* Canvas Contract Verification */,
 				C560912C2FBB221E008F7F57 /* Sources */,
 				C560912D2FBB221E008F7F57 /* Frameworks */,
 				C560912E2FBB221E008F7F57 /* Resources */,
@@ -113,6 +114,30 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXResourcesBuildPhase section */
+
+/* Begin PBXShellScriptBuildPhase section */
+		0EBE4ECF6CAA49648B840FC1 /* Canvas Contract Verification */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+				"$(SRCROOT)/travelclip/ContentView.swift",
+				"$(SRCROOT)/scripts/verify_canvas_contract.py",
+			);
+			name = "Canvas Contract Verification";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "\"${SRCROOT}/scripts/verify_canvas_contract.py\"\n";
+		};
+/* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
 		C560912C2FBB221E008F7F57 /* Sources */ = {
