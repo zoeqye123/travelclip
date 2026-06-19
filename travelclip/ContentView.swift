@@ -136,7 +136,9 @@ private struct HomeView: View {
                 createStorePage(action)
             }
         case .universe:
-            PlaceholderRootTabView(title: "Universe", icon: "globe.asia.australia", subtitle: "Travel city packs and community sets will live here.")
+            UniverseRootTabView(repository: repository, locationProvider: locationProvider) { action in
+                createStorePage(action)
+            }
         case .my:
             MyLibraryRootTabView(
                 repository: repository,
@@ -5190,6 +5192,230 @@ private struct MaterialStoreHomeView: View {
     private func materialKind(for item: MaterialItem) -> MaterialKind {
         let tokens = ([item.title, item.fileName, item.category ?? ""] + item.tags).map { $0.lowercased() }
         return tokens.contains { $0.contains("tape") || $0.contains("washi") || $0.contains("胶带") } ? .tape : .sticker
+    }
+}
+
+private struct UniverseRootTabView: View {
+    @ObservedObject var repository: NotebookRepository
+    @ObservedObject var locationProvider: TravelLocationProvider
+    let onInsert: (StoreInsertAction) -> Void
+
+    private var featuredGroups: [MaterialGroup] {
+        let locationTokens = ([locationProvider.searchedPlaceName, locationProvider.city, locationProvider.regionName, locationProvider.country])
+            .compactMap { $0 }
+            .flatMap(\.locationTokens)
+
+        let locationMatches = repository.materialGroups.filter { group in
+            let groupTokens = ([group.city, group.country, group.title] + group.tags).flatMap(\.locationTokens)
+            return locationTokens.contains { token in
+                groupTokens.contains { value in value == token || value.contains(token) || token.contains(value) }
+            }
+        }
+
+        let source = locationMatches.isEmpty ? repository.materialGroups : locationMatches
+        return Array(source.prefix(4))
+    }
+
+    private var spotlightItems: [MaterialItem] {
+        Array(featuredGroups.flatMap(\.items).prefix(12))
+    }
+
+    private var universeSubtitle: String {
+        let place = locationProvider.mapDisplayName
+        return place == "Pick a place" ? "Travel packs, templates, and local material ideas." : "Travel packs inspired by \(place)."
+    }
+
+    var body: some View {
+        ScrollView(showsIndicators: false) {
+            VStack(alignment: .leading, spacing: 20) {
+                HStack(spacing: 10) {
+                    Image(systemName: "globe.asia.australia")
+                        .font(.system(size: 27, weight: .bold))
+                        .foregroundStyle(Color.clay)
+                        .frame(width: 54, height: 54)
+                        .background(Color.paper)
+                        .clipShape(RoundedRectangle(cornerRadius: 17, style: .continuous))
+                        .overlay(RoundedRectangle(cornerRadius: 17, style: .continuous).stroke(Color.lineSoft, lineWidth: 1.1))
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Universe")
+                            .font(.system(size: 31, weight: .bold, design: .serif))
+                            .foregroundStyle(Color.ink)
+
+                        Text(universeSubtitle)
+                            .font(.system(size: 13, weight: .medium, design: .rounded))
+                            .foregroundStyle(Color.inkSoft)
+                            .lineLimit(2)
+                    }
+
+                    Spacer(minLength: 0)
+                }
+
+                if spotlightItems.isEmpty {
+                    emptyUniverse
+                } else {
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("Travel Picks")
+                            .sectionTitle()
+
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 12) {
+                                ForEach(spotlightItems) { item in
+                                    UniverseMaterialCard(item: item) {
+                                        onInsert(.material(item))
+                                    }
+                                }
+                            }
+                            .padding(.vertical, 2)
+                        }
+                    }
+                }
+
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("City Packs")
+                        .sectionTitle()
+
+                    ForEach(featuredGroups) { group in
+                        UniversePackRow(group: group) { item in
+                            onInsert(.material(item))
+                        }
+                    }
+                }
+
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("Start With A Layout")
+                        .sectionTitle()
+
+                    LazyVGrid(columns: [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)], spacing: 12) {
+                        ForEach(repository.templateLibrary.prefix(2)) { template in
+                            TemplateChoiceCard(template: template, imageURL: { repository.imageURL(for: $0) }) {
+                                onInsert(.template(template))
+                            }
+                        }
+                    }
+                }
+
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("Paper Styles")
+                        .sectionTitle()
+
+                    LazyVGrid(columns: StoreGrid.columns, spacing: 12) {
+                        ForEach(repository.backgroundLibrary.prefix(3)) { background in
+                            BackgroundChoiceCard(background: background, selected: false) {
+                                onInsert(.background(background))
+                            }
+                        }
+                    }
+                }
+            }
+            .padding(.horizontal, 18)
+            .padding(.top, 10)
+            .padding(.bottom, 116)
+        }
+    }
+
+    private var emptyUniverse: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Image(systemName: "sparkles")
+                .font(.system(size: 25, weight: .bold))
+                .foregroundStyle(Color.clay)
+            Text("No travel packs found yet.")
+                .font(.system(size: 16, weight: .bold, design: .rounded))
+                .foregroundStyle(Color.ink)
+            Text("Templates and paper styles are still available below.")
+                .font(.system(size: 13, weight: .medium, design: .rounded))
+                .foregroundStyle(Color.inkSoft)
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.paper.opacity(0.86))
+        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(Color.lineSoft, lineWidth: 1))
+    }
+}
+
+private struct UniverseMaterialCard: View {
+    let item: MaterialItem
+    let action: () -> Void
+
+    var body: some View {
+        TrackedEditorToolButton(componentID: "universe.material.\(telemetryIDSegment(item.id))", disabled: false, action: action) {
+            VStack(alignment: .leading, spacing: 8) {
+                if let image = CanvasImageCache.shared.image(at: item.fileURL, maxPixelSize: 420) {
+                    Image(uiImage: image)
+                        .resizable()
+                        .scaledToFill()
+                        .frame(width: 132, height: 104)
+                        .clipped()
+                } else {
+                    Image(systemName: "photo")
+                        .font(.system(size: 30, weight: .semibold))
+                        .foregroundStyle(Color.inkSoft)
+                        .frame(width: 132, height: 104)
+                        .background(Color.paper)
+                }
+
+                Text(item.title)
+                    .font(.system(size: 12, weight: .bold, design: .rounded))
+                    .foregroundStyle(Color.ink)
+                    .lineLimit(1)
+
+                Text([item.city, item.country].filter { !$0.isEmpty }.joined(separator: " / "))
+                    .font(.system(size: 10, weight: .medium, design: .rounded))
+                    .foregroundStyle(Color.inkSoft)
+                    .lineLimit(1)
+            }
+            .padding(8)
+            .frame(width: 148, height: 166, alignment: .topLeading)
+            .background(Color.paper)
+            .clipShape(RoundedRectangle(cornerRadius: 15, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 15, style: .continuous).stroke(Color.lineSoft, lineWidth: 1.1))
+        }
+    }
+}
+
+private struct UniversePackRow: View {
+    let group: MaterialGroup
+    let onMaterial: (MaterialItem) -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 8) {
+                Image(systemName: "mappin.and.ellipse")
+                    .font(.system(size: 13, weight: .bold))
+                    .foregroundStyle(Color.clay)
+                    .frame(width: 24, height: 24)
+                    .background(Color.paper)
+                    .clipShape(Circle())
+                    .overlay(Circle().stroke(Color.lineSoft, lineWidth: 1))
+
+                Text(group.title)
+                    .font(.system(size: 15, weight: .bold, design: .rounded))
+                    .foregroundStyle(Color.ink)
+                    .lineLimit(1)
+
+                Text("\(group.items.count)")
+                    .font(.system(size: 11, weight: .bold, design: .rounded))
+                    .foregroundStyle(Color.inkSoft)
+                    .padding(.horizontal, 7)
+                    .frame(height: 20)
+                    .background(Color.paper.opacity(0.82))
+                    .clipShape(Capsule())
+
+                Spacer(minLength: 0)
+            }
+
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 10) {
+                    ForEach(group.items.prefix(10)) { item in
+                        MaterialStoreShelfItem(item: item) {
+                            onMaterial(item)
+                        }
+                    }
+                }
+                .padding(.vertical, 2)
+            }
+        }
     }
 }
 
