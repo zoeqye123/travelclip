@@ -8422,24 +8422,30 @@ private struct TextInputSheet: View {
                         refreshPreview()
                     }
                     .onChange(of: style.fontName) { _, _ in
+                        recordStyleChange("font")
                         refreshPreview()
                     }
                     .onChange(of: style.fontSize) { _, _ in
+                        recordStyleChange("size")
                         refreshPreview()
                     }
                     .onChange(of: style.colorHex) { _, _ in
                         refreshPreview()
                     }
                     .onChange(of: style.bold) { _, _ in
+                        recordStyleChange("bold")
                         refreshPreview()
                     }
                     .onChange(of: style.italic) { _, _ in
+                        recordStyleChange("italic")
                         refreshPreview()
                     }
                     .onChange(of: style.alignment) { _, _ in
+                        recordStyleChange("align")
                         refreshPreview()
                     }
                     .onChange(of: style.width) { _, _ in
+                        recordStyleChange("width")
                         refreshPreview()
                     }
 
@@ -8570,6 +8576,10 @@ private struct TextInputSheet: View {
         var previewStyle = style
         previewStyle.text = text
         previewImage = TextRenderService.sampleImage(text: text, style: previewStyle, scale: 2)
+    }
+
+    private func recordStyleChange(_ component: String) {
+        InteractionTelemetry.recordAction(componentID: "sheet.text.\(component)", disabled: false)
     }
 
     private func sliderRow(title: String, value: Binding<CGFloat>, range: ClosedRange<CGFloat>, step: CGFloat) -> some View {
