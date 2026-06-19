@@ -4600,12 +4600,6 @@ private struct FloatingSelectionToolbar: View {
                     .background(Color.paper.opacity(0.9))
                     .clipShape(Capsule())
 
-                if selectedElement?.kind == .image {
-                    gestureHint("hand.draw")
-                    gestureHint("arrow.up.left.and.arrow.down.right")
-                    gestureHint("rotate.right")
-                }
-
                 if canTuneColor {
                     TrackedEditorToolButton(componentID: "floating.selection.color-panel", disabled: false, action: {
                         expandedPanel = expandedPanel == .color ? nil : .color
@@ -4848,14 +4842,6 @@ private struct FloatingSelectionToolbar: View {
         InteractionTelemetry.recordAction(componentID: componentID, disabled: false)
     }
 
-    private func gestureHint(_ icon: String) -> some View {
-        Image(systemName: icon)
-            .font(.system(size: 12, weight: .bold))
-            .foregroundStyle(Color.clay.opacity(0.82))
-            .frame(width: 30, height: 30)
-            .background(Color.paper.opacity(0.68))
-            .clipShape(Circle())
-    }
 }
 
 private enum FloatingToolbarPanel {
@@ -7510,7 +7496,7 @@ private struct EditorToolPanel<PhotoPicker: View>: View {
         toolButton("wand.and.stars", "ArtStyle", action: onWordArtStyles)
         toolButton("link", "Link", action: onLink)
         toolButton("doc.badge.plus", "File", action: onFile)
-        toolButton("scribble.variable", "Stroke", action: onBrush)
+        toolButton("paintbrush.pointed", "Brush", action: onBrush)
         toolButton("paintpalette", "Palette", action: onBackground)
         toolButton("square.on.circle", "Shapes", action: onShape)
         toolButton("arrow.right", "Arrow", action: onConnector)

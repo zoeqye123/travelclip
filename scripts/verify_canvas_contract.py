@@ -220,6 +220,7 @@ def main() -> None:
     require(r"recordSliderChange\(\"floating\.selection\.tape-length\"\)", source, "Floating selection tape length slider must record telemetry.")
     require(r"recordSliderChange\(\"floating\.selection\.opacity\"\)", source, "Floating selection opacity slider must record telemetry.")
     require(r"recordSliderChange\(\"floating\.selection\.corner-radius\"\)", source, "Floating selection corner radius slider must record telemetry.")
+    forbid(r"gestureHint\(", source, "Floating selection toolbar must not show non-action gesture hint buttons.")
     require(r"recordAction\(componentID:\s*componentID", source, "Native slider telemetry helpers must pass through stable component IDs.")
     require(r"componentID:\s*\"sheet\.text\.", source, "Text editor sheet buttons must have stable telemetry component IDs.")
     require(r"recordStyleChange\(\"font\"\)", source, "Text font picker changes must record telemetry.")
@@ -303,6 +304,7 @@ def main() -> None:
         r"toolButton\(\"square\.stack\.3d\.up\",\s*\"Group\"",
         r"toolButton\(\"square\.stack\.3d\.down\.right\",\s*\"Ungroup\"",
         r"case\s+\.object:\s+return\s+\"square\.stack\.3d\.up\"",
+        r"toolButton\(\"scribble\.variable\",\s*\"Stroke\",\s*action:\s*onBrush\)",
         r"preset\.kind\s*==\s*\.wordArt\s*\?\s*\"textformat\.alt\"",
         r"case\s+\.wordArt:\s+return\s+\"textformat\.alt\"",
     ]:
@@ -318,6 +320,7 @@ def main() -> None:
         (r"toolButton\(\"rectangle\.split\.3x1\",\s*\"Ungroup\"", "Ungroup action must use a split-group icon, not a layer stack icon."),
         (r"case\s+\.adjust:\s+return\s+\"dial\.medium\"", "Adjust shelf must use a tuning dial icon."),
         (r"case\s+\.object:\s+return\s+\"cursorarrow\"", "Object shelf must use a selection cursor icon, not the layer stack icon."),
+        (r"toolButton\(\"paintbrush\.pointed\",\s*\"Brush\",\s*action:\s*onBrush\)", "Brush insertion must be labeled Brush and use the brush icon, not a Stroke style label."),
         (r"case\s+\.wordArt:\s+return\s+\"textformat\.size\"", "WordArt category and element icons must use the text sizing icon."),
     ]
     for pattern, message in expected_icon_mappings:
