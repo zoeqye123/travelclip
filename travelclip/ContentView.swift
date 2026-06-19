@@ -78,6 +78,7 @@ private struct HomeView: View {
     @StateObject private var locationProvider = TravelLocationProvider()
     @State private var showingNewNotebook = false
     @State private var showingPlaceSearch = false
+    @State private var showingNotifications = false
 
     var body: some View {
         ZStack(alignment: .bottom) {
@@ -105,6 +106,21 @@ private struct HomeView: View {
             .presentationDetents(EditorSheetSizing.addDetents)
             .presentationDragIndicator(.visible)
         }
+        .sheet(isPresented: $showingNotifications) {
+            HomeNotificationSheet(
+                notebooks: repository.notebooks,
+                pages: repository.pages,
+                onOpenPage: { pageID in
+                    showingNotifications = false
+                    path.append(.preview(pageID))
+                },
+                onDone: {
+                    showingNotifications = false
+                }
+            )
+            .presentationDetents([.medium, .large])
+            .presentationDragIndicator(.visible)
+        }
         .onAppear {
             repository.bootstrapIfNeeded()
         }
@@ -129,7 +145,7 @@ private struct HomeView: View {
     private var homeContent: some View {
         ScrollView(showsIndicators: false) {
             VStack(alignment: .leading, spacing: 22) {
-                HeaderView()
+                HeaderView(onNotifications: { showingNotifications = true })
                 SearchCard(
                     title: locationProvider.placeDisplayName,
                     subtitle: locationProvider.statusText,
@@ -8982,6 +8998,8 @@ private struct CanvasThumbnail: View {
 }
 
 private struct HeaderView: View {
+    let onNotifications: () -> Void
+
     var body: some View {
         HStack(alignment: .top) {
             VStack(alignment: .leading, spacing: 4) {
@@ -9000,8 +9018,163 @@ private struct HeaderView: View {
 
             Spacer()
 
-            HeaderButton(icon: "bell")
+            HeaderButton(
+                icon: "bell",
+                componentID: "home.header.notifications",
+                accessibilityLabel: "Notifications",
+                action: onNotifications
+            )
         }
+    }
+}
+
+private struct HomeNotificationSheet: View {
+    let notebooks: [TravelNotebook]
+    let pages: [JournalPage]
+    let onOpenPage: (UUID) -> Void
+    let onDone: () -> Void
+
+    private var recentPages: [JournalPage] {
+        Array(pages.sorted { $0.updatedAt > $1.updatedAt }.prefix(5))
+    }
+
+    private var totalElementCount: Int {
+        pages.reduce(0) { total, page in
+            total + page.canvasDocument.elements.count
+        }
+    }
+
+    var body: some View {
+        NavigationStack {
+            ScrollView(showsIndicators: false) {
+                VStack(alignment: .leading, spacing: 18) {
+                    HStack(spacing: 12) {
+                        notificationMetric(title: "Notebooks", value: "\(notebooks.count)", icon: "book.closed")
+                        notificationMetric(title: "Pages", value: "\(pages.count)", icon: "doc.text.image")
+                        notificationMetric(title: "Items", value: "\(totalElementCount)", icon: "square.stack.3d.up")
+                    }
+
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("Recent activity")
+                            .font(.system(size: 17, weight: .bold, design: .rounded))
+                            .foregroundStyle(Color.ink)
+
+                        if recentPages.isEmpty {
+                            emptyState
+                        } else {
+                            ForEach(recentPages) { page in
+                                TrackedEditorToolButton(componentID: "home.notifications.open.\(page.id.uuidString.lowercased())", disabled: false, action: {
+                                    onOpenPage(page.id)
+                                }) {
+                                    HStack(spacing: 12) {
+                                        Image(systemName: icon(for: page))
+                                            .font(.system(size: 18, weight: .semibold))
+                                            .foregroundStyle(Color.clay)
+                                            .frame(width: 38, height: 38)
+                                            .background(Color.sand.opacity(0.7))
+                                            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+
+                                        VStack(alignment: .leading, spacing: 4) {
+                                            Text(page.title)
+                                                .font(.system(size: 14, weight: .semibold, design: .rounded))
+                                                .foregroundStyle(Color.ink)
+                                                .lineLimit(1)
+
+                                            Text(page.updatedAt.formatted(date: .abbreviated, time: .shortened))
+                                                .font(.system(size: 12, weight: .medium, design: .rounded))
+                                                .foregroundStyle(Color.inkSoft)
+                                                .lineLimit(1)
+                                        }
+
+                                        Spacer()
+
+                                        Image(systemName: "chevron.right")
+                                            .font(.system(size: 12, weight: .bold))
+                                            .foregroundStyle(Color.inkSoft)
+                                    }
+                                    .padding(12)
+                                    .background(Color.paper)
+                                    .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                                    .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Color.lineSoft, lineWidth: 1))
+                                }
+                            }
+                        }
+                    }
+                }
+                .padding(18)
+                .padding(.bottom, 12)
+            }
+            .background(PaperBackground().ignoresSafeArea())
+            .navigationTitle("Notifications")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    TrackedEditorToolButton(componentID: "home.notifications.done", disabled: false, action: onDone) {
+                        Text("Done")
+                            .font(.system(size: 14, weight: .bold, design: .rounded))
+                            .foregroundStyle(Color.clay)
+                            .padding(.horizontal, 12)
+                            .frame(height: 34)
+                    }
+                }
+            }
+        }
+    }
+
+    private func notificationMetric(title: String, value: String, icon: String) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Image(systemName: icon)
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundStyle(Color.clay)
+            Text(value)
+                .font(.system(size: 22, weight: .bold, design: .rounded))
+                .foregroundStyle(Color.ink)
+                .lineLimit(1)
+                .minimumScaleFactor(0.72)
+            Text(title)
+                .font(.system(size: 11, weight: .semibold, design: .rounded))
+                .foregroundStyle(Color.inkSoft)
+                .lineLimit(1)
+                .minimumScaleFactor(0.72)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(12)
+        .background(Color.paper)
+        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Color.lineSoft, lineWidth: 1))
+    }
+
+    private var emptyState: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "tray")
+                .font(.system(size: 18, weight: .semibold))
+                .foregroundStyle(Color.inkSoft)
+                .frame(width: 38, height: 38)
+                .background(Color.paper)
+                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+
+            Text("No recent page activity yet.")
+                .font(.system(size: 14, weight: .semibold, design: .rounded))
+                .foregroundStyle(Color.inkSoft)
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.paper.opacity(0.72))
+        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Color.lineSoft, lineWidth: 1))
+    }
+
+    private func icon(for page: JournalPage) -> String {
+        if page.canvasDocument.elements.contains(where: { $0.kind == .image || $0.kind == .video }) {
+            return "photo.on.rectangle"
+        }
+        if page.canvasDocument.elements.contains(where: { $0.kind == .link || $0.kind == .file }) {
+            return "paperclip"
+        }
+        if page.canvasDocument.elements.contains(where: { $0.kind == .brush || $0.kind == .connector }) {
+            return "scribble.variable"
+        }
+        return "doc.text"
     }
 }
 
@@ -9339,11 +9512,12 @@ private struct LocationMapPreview: View {
 
 private struct HeaderButton: View {
     let icon: String
+    let componentID: String
+    let accessibilityLabel: String
+    let action: () -> Void
 
     var body: some View {
-        TrackedEditorToolButton(componentID: "home.header.\(telemetryIDSegment(icon))", disabled: false, action: {
-            InteractionTelemetry.recordAction(componentID: "home.header.\(telemetryIDSegment(icon)).placeholder", disabled: true)
-        }) {
+        TrackedEditorToolButton(componentID: componentID, disabled: false, action: action) {
             Image(systemName: icon)
                 .font(.system(size: 19, weight: .regular))
                 .foregroundStyle(Color.ink)
@@ -9352,7 +9526,7 @@ private struct HeaderButton: View {
                 .clipShape(Circle())
                 .overlay(Circle().stroke(Color.lineSoft, lineWidth: 1.3))
         }
-        .accessibilityLabel(Text(icon))
+        .accessibilityLabel(Text(accessibilityLabel))
     }
 }
 
