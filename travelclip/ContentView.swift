@@ -2282,6 +2282,7 @@ private struct CanvasEditorView: View {
         }
         .onChange(of: selectedPhoto) { _, newItem in
             guard let newItem else { return }
+            InteractionTelemetry.recordAction(componentID: "editor.tool.picture.picker", disabled: false)
             Task {
                 let result = await repository.addPhoto(newItem, to: pageID)
                 switch result {
@@ -9060,6 +9061,7 @@ private struct NewNotebookSheet: View {
         }
         .task(id: selectedCoverPhoto) {
             guard let selectedCoverPhoto else { return }
+            InteractionTelemetry.recordAction(componentID: "sheet.new-notebook.cover.picker", disabled: false)
             coverImageData = try? await selectedCoverPhoto.loadTransferable(type: Data.self)
         }
     }

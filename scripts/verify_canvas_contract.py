@@ -68,6 +68,13 @@ def require_no_noop_tracked_actions(source: str) -> None:
         fail(f"TrackedEditorToolButton at {CONTENT_VIEW}:{index + 1} must not have an empty action unless it is explicitly disabled.")
 
 
+def require_native_photo_pickers_are_tracked(source: str) -> None:
+    picker_count = len(re.findall(r"\bPhotosPicker\s*\(", source))
+    telemetry_count = len(re.findall(r"recordAction\(componentID:\s*\"(?:editor\.tool\.picture\.picker|sheet\.new-notebook\.cover\.picker)\"", source))
+    if picker_count != telemetry_count:
+        fail("Every native PhotosPicker path must record telemetry with a stable component ID when a selection is made.")
+
+
 def require_block(pattern: str, source: str, message: str) -> Optional[str]:
     match = re.search(pattern, source, re.DOTALL)
     if not match:
@@ -173,6 +180,7 @@ def main() -> None:
     require_direct_buttons_are_menu_tracked(source)
     require_native_disabled_usage_is_safe(source)
     require_no_noop_tracked_actions(source)
+    require_native_photo_pickers_are_tracked(source)
     forbid(r"toolButton\([^)]*disabled:\s*true", source, "Editor tool rows must not include hard-coded disabled tool buttons; hide unavailable permanent controls or use state-driven disabled conditions.")
     require(r"componentID:\s*\"editor\.tool\.", source, "Editor tool buttons must have stable telemetry component IDs.")
     require(r"componentID:\s*\"editor\.align\.", source, "Editor alignment buttons must have stable telemetry component IDs.")
@@ -214,6 +222,8 @@ def main() -> None:
     require(r"componentID:\s*\"sheet\.notebook-edit\.", source, "Notebook edit sheet controls must have stable telemetry component IDs.")
     require(r"componentID:\s*\"sheet\.notebook-picker\.", source, "Notebook picker sheet controls must have stable telemetry component IDs.")
     require(r"componentID:\s*\"sheet\.new-notebook\.", source, "New notebook sheet controls must have stable telemetry component IDs.")
+    require(r"recordAction\(componentID:\s*\"editor\.tool\.picture\.picker\"", source, "Editor native photo picker selection must record telemetry.")
+    require(r"recordAction\(componentID:\s*\"sheet\.new-notebook\.cover\.picker\"", source, "New notebook cover photo picker selection must record telemetry.")
     require(r"componentID:\s*\"home\.header\.", source, "Home header controls must have telemetry.")
     require(r"componentID:\s*\"home\.header\.notifications\"", source, "Home notification header button must have a stable telemetry component ID.")
     require(r"HomeNotificationSheet\(", source, "Home notification header button must open a real notification sheet.")
