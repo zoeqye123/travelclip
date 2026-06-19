@@ -4909,7 +4909,7 @@ private enum EditorToolShelf: String, CaseIterable, Identifiable {
         case .add: return "plus.circle"
         case .adjust: return "dial.medium"
         case .arrange: return "square.grid.2x2"
-        case .object: return "square.stack.3d.up"
+        case .object: return "cursorarrow"
         }
     }
 }

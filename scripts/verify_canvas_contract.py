@@ -302,6 +302,7 @@ def main() -> None:
         r"toolButton\(\"rectangle\.fill\.on\.rectangle\.fill\",\s*\"Texture\"",
         r"toolButton\(\"square\.stack\.3d\.up\",\s*\"Group\"",
         r"toolButton\(\"square\.stack\.3d\.down\.right\",\s*\"Ungroup\"",
+        r"case\s+\.object:\s+return\s+\"square\.stack\.3d\.up\"",
         r"preset\.kind\s*==\s*\.wordArt\s*\?\s*\"textformat\.alt\"",
         r"case\s+\.wordArt:\s+return\s+\"textformat\.alt\"",
     ]:
@@ -316,6 +317,7 @@ def main() -> None:
         (r"toolButton\(\"rectangle\.3\.group\",\s*\"Group\"", "Group action must use a grouping icon, not a layer stack icon."),
         (r"toolButton\(\"rectangle\.split\.3x1\",\s*\"Ungroup\"", "Ungroup action must use a split-group icon, not a layer stack icon."),
         (r"case\s+\.adjust:\s+return\s+\"dial\.medium\"", "Adjust shelf must use a tuning dial icon."),
+        (r"case\s+\.object:\s+return\s+\"cursorarrow\"", "Object shelf must use a selection cursor icon, not the layer stack icon."),
         (r"case\s+\.wordArt:\s+return\s+\"textformat\.size\"", "WordArt category and element icons must use the text sizing icon."),
     ]
     for pattern, message in expected_icon_mappings:
