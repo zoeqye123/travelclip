@@ -1898,6 +1898,10 @@ private struct CanvasEditorView: View {
                                 activePanel = .effect
                                 repository.addEffect(to: pageID)
                             },
+                            onMaterial: {
+                                clearActiveCanvasTool()
+                                assetSheet = .materials
+                            },
                             onSticker: {
                                 clearActiveCanvasTool()
                                 assetSheet = .stickers
@@ -4839,6 +4843,7 @@ private enum TextInsertMode {
 private enum CanvasAssetSheet: String, Identifiable {
     case templates
     case text
+    case materials
     case stickers
     case shapes
     case backgrounds
@@ -4852,6 +4857,7 @@ private enum CanvasAssetSheet: String, Identifiable {
         switch self {
         case .templates: return "Templates"
         case .text: return "Text"
+        case .materials: return "Materials"
         case .stickers: return "Stickers"
         case .shapes: return "Shapes"
         case .backgrounds: return "Backgrounds"
@@ -5524,7 +5530,7 @@ private struct CanvasAssetPickerSheet: View {
                 case .text:
                     PresetTextPanel(presets: repository.textPresetLibrary, onPreset: onTextPreset)
                         .padding(16)
-                case .stickers:
+                case .materials:
                     MaterialPanel(
                         groups: materialGroups,
                         allGroups: allMaterialGroups,
@@ -5534,6 +5540,15 @@ private struct CanvasAssetPickerSheet: View {
                         onMaterial: onMaterial,
                         onSticker: onSticker
                     )
+                    .padding(16)
+                case .stickers:
+                    LazyVGrid(columns: columns, spacing: 12) {
+                        ForEach(repository.stickerLibrary) { sticker in
+                            StickerChoiceCard(sticker: sticker) {
+                                onSticker(sticker)
+                            }
+                        }
+                    }
                     .padding(16)
                 case .shapes:
                     LazyVGrid(columns: columns, spacing: 12) {
@@ -7063,6 +7078,7 @@ private struct EditorToolPanel<PhotoPicker: View>: View {
     let onShareObject: () -> Void
     let onNote: () -> Void
     let onEffect: () -> Void
+    let onMaterial: () -> Void
     let onSticker: () -> Void
     let onShape: () -> Void
     let onBackground: () -> Void
@@ -7285,7 +7301,8 @@ private struct EditorToolPanel<PhotoPicker: View>: View {
     @ViewBuilder
     private var addTools: some View {
         photoPicker()
-        toolButton("sparkles", "Materials", action: onSticker)
+        toolButton("storefront", "Materials", action: onMaterial)
+        toolButton("sparkles", "Stickers", action: onSticker)
         toolButton("ticket", "Ticket", action: onTicket)
         toolButton("textformat", "Text", action: onText)
         toolButton("textformat.size", "Styles", action: onTextStyles)
