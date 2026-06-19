@@ -1139,6 +1139,11 @@ private enum InteractionTelemetry {
         print("[InteractionTelemetry] component=\(componentID) disabled=false \(displayText) \(documentText)")
     }
 
+    static func logCanvasGesture(componentID: String, phase: String, elementCount: Int? = nil) {
+        let countText = elementCount.map { " count=\($0)" } ?? ""
+        print("[InteractionTelemetry] component=\(componentID) phase=\(phase)\(countText)")
+    }
+
     static func feedback(disabled: Bool) {
         if disabled {
             UINotificationFeedbackGenerator().notificationOccurred(.warning)
@@ -2747,6 +2752,7 @@ private struct CanvasWorkspace: View {
                                 captureTransformUndo(for: element.id)
                                 if elementTransformPreview[element.id] == nil {
                                     beginCanvasInteraction()
+                                    recordCanvasGesture("canvas.element.move.\(element.id.uuidString.lowercased())", phase: "start")
                                 }
                                 let start = dragStartFrames[element.id] ?? CGPoint(x: element.x, y: element.y)
                                 dragStartFrames[element.id] = start
@@ -2788,6 +2794,7 @@ private struct CanvasWorkspace: View {
                                 undoCapturedForDrag.remove(selectionUndoKey)
                                 activeGuides = nil
                                 endCanvasInteraction()
+                                recordCanvasGesture("canvas.element.move.\(element.id.uuidString.lowercased())", phase: "end")
                                 onCommit()
                             }
                     )
@@ -2804,6 +2811,7 @@ private struct CanvasWorkspace: View {
                     end: viewportTransform.displayPoint(connector.freeConnectorEndpoints.end),
                     onDragStart: {
                         beginCanvasInteraction()
+                        recordCanvasGesture("canvas.connector.endpoint.\(connector.id.uuidString.lowercased())", phase: "start")
                         onSelect(connector.id, false)
                         captureTransformUndo(for: connector.id)
                         transformingElementIDs.insert(connector.id)
@@ -2825,6 +2833,7 @@ private struct CanvasWorkspace: View {
                         transformingElementIDs.remove(connector.id)
                         undoCapturedForDrag.remove(connector.id)
                         endCanvasInteraction()
+                        recordCanvasGesture("canvas.connector.endpoint.\(connector.id.uuidString.lowercased())", phase: "end")
                         onCommit()
                     }
                 )
@@ -2836,6 +2845,7 @@ private struct CanvasWorkspace: View {
                     rect: viewportTransform.displayRect(selectionRect),
                     onMoveStart: {
                         beginCanvasInteraction()
+                        recordCanvasGesture("canvas.selection.move", phase: "start", elementCount: selectedElementIDs.count)
                         captureSelectionUndo()
                         selectionDragStartFrames = selectedElements.reduce(into: [:]) { result, element in
                             result[element.id] = CGPoint(x: element.x, y: element.y)
@@ -2861,10 +2871,12 @@ private struct CanvasWorkspace: View {
                         undoCapturedForDrag.remove(selectionUndoKey)
                         activeGuides = nil
                         endCanvasInteraction()
+                        recordCanvasGesture("canvas.selection.move", phase: "end", elementCount: selectedElementIDs.count)
                         onCommit()
                     },
                     onTransformStart: {
                         beginCanvasInteraction()
+                        recordCanvasGesture("canvas.selection.transform", phase: "start", elementCount: selectedElementIDs.count)
                         captureSelectionUndo()
                         selectionTransformStartElements = selectedElements.reduce(into: [:]) { result, element in
                             result[element.id] = element
@@ -2904,6 +2916,7 @@ private struct CanvasWorkspace: View {
                         selectionTransformPreview = [:]
                         undoCapturedForDrag.remove(selectionUndoKey)
                         endCanvasInteraction()
+                        recordCanvasGesture("canvas.selection.transform", phase: "end", elementCount: selectedElementIDs.count)
                         onCommit()
                     }
                 )
@@ -3054,6 +3067,10 @@ private struct CanvasWorkspace: View {
         InteractionTelemetry.feedback(disabled: false)
     }
 
+    private func recordCanvasGesture(_ componentID: String, phase: String, elementCount: Int? = nil) {
+        InteractionTelemetry.logCanvasGesture(componentID: componentID, phase: phase, elementCount: elementCount)
+    }
+
     private func previewMovedSelectionElements(from startPositions: [UUID: CGPoint], translation: CGSize) -> [UUID: CanvasElement] {
         document.elements.reduce(into: [:]) { result, element in
             guard selectedElementIDs.contains(element.id),
@@ -3078,6 +3095,7 @@ private struct CanvasWorkspace: View {
                 captureTransformUndo(for: element.id)
                 if elementTransformStartElements[element.id] == nil {
                     beginCanvasInteraction()
+                    recordCanvasGesture("canvas.element.transform.\(element.id.uuidString.lowercased())", phase: "start")
                     elementTransformStartElements[element.id] = elementTransformPreview[element.id] ?? element
                 }
 
@@ -3098,6 +3116,7 @@ private struct CanvasWorkspace: View {
                 transformingElementIDs.remove(element.id)
                 undoCapturedForDrag.remove(element.id)
                 endCanvasInteraction()
+                recordCanvasGesture("canvas.element.transform.\(element.id.uuidString.lowercased())", phase: "end")
                 onCommit()
             }
     }
@@ -3827,6 +3846,7 @@ private struct BrushCaptureOverlay: View {
     let opacity: Double
     let onEnded: ([CGPoint]) -> Void
     @State private var currentPoints: [CGPoint] = []
+    @State private var isDrawing = false
 
     var body: some View {
         ZStack {
@@ -3838,6 +3858,8 @@ private struct BrushCaptureOverlay: View {
                             let point = transform.documentPoint(value.location)
                             let minimumStep = 4 / max(transform.uniformScale, 0.2)
                             guard let last = currentPoints.last else {
+                                isDrawing = true
+                                InteractionTelemetry.logCanvasGesture(componentID: "canvas.brush.draw", phase: "start")
                                 currentPoints.append(point)
                                 return
                             }
@@ -3848,6 +3870,10 @@ private struct BrushCaptureOverlay: View {
                             if currentPoints.count > 1 {
                                 onEnded(currentPoints)
                             }
+                            if isDrawing {
+                                InteractionTelemetry.logCanvasGesture(componentID: "canvas.brush.draw", phase: "end")
+                            }
+                            isDrawing = false
                             currentPoints = []
                         }
                 )
@@ -3868,6 +3894,7 @@ private struct ArrowCaptureOverlay: View {
     let onEnded: (CGPoint, CGPoint) -> Void
     @State private var startPoint: CGPoint?
     @State private var currentPoint: CGPoint?
+    @State private var isDrawing = false
 
     var body: some View {
         ZStack {
@@ -3878,6 +3905,8 @@ private struct ArrowCaptureOverlay: View {
                         .onChanged { value in
                             if startPoint == nil {
                                 startPoint = value.startLocation
+                                isDrawing = true
+                                InteractionTelemetry.logCanvasGesture(componentID: "canvas.arrow.draw", phase: "start")
                             }
                             currentPoint = value.location
                         }
@@ -3886,6 +3915,10 @@ private struct ArrowCaptureOverlay: View {
                             let end = value.location
                             startPoint = nil
                             currentPoint = nil
+                            if isDrawing {
+                                InteractionTelemetry.logCanvasGesture(componentID: "canvas.arrow.draw", phase: "end")
+                            }
+                            isDrawing = false
                             guard hypot(end.x - start.x, end.y - start.y) >= 18 else { return }
                             onEnded(
                                 transform.documentPoint(start),
