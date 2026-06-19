@@ -138,6 +138,15 @@ def main() -> None:
         display_element = require_block(r"func\s+displayElement\(_\s+element:\s+CanvasElement\)\s*->\s*CanvasElement\s*\{(?P<body>.*?)\n    \}", transform, "CanvasViewportTransform.displayElement not found.")
         if display_element is not None:
             forbid(r"copy\.x\s*\*=|copy\.y\s*\*=", display_element, "CanvasViewportTransform.displayElement must not scale element centers because parent positioning uses displayPoint.")
+            require(r"copy\.width\s*\*=\s*xScale", display_element, "CanvasViewportTransform.displayElement must scale element width by xScale.")
+            require(r"copy\.height\s*\*=\s*yScale", display_element, "CanvasViewportTransform.displayElement must scale element height by yScale.")
+            require(r"copy\.connectorStartPoint\s*=\s*element\.connectorStartPoint\.map[\s\S]*?x:\s*point\.x\s*\*\s*xScale[\s\S]*?y:\s*point\.y\s*\*\s*yScale", display_element, "CanvasViewportTransform.displayElement must scale free connector start endpoints.")
+            require(r"copy\.connectorEndPoint\s*=\s*element\.connectorEndPoint\.map[\s\S]*?x:\s*point\.x\s*\*\s*xScale[\s\S]*?y:\s*point\.y\s*\*\s*yScale", display_element, "CanvasViewportTransform.displayElement must scale free connector end endpoints.")
+
+    display_scaled = require_block(r"func\s+displayScaled\(by\s+scale:\s+CGFloat\)\s*->\s*CanvasElement\s*\{(?P<body>.*?)\n    \}", source, "CanvasElement.displayScaled not found.")
+    if display_scaled is not None:
+        require(r"copy\.connectorStartPoint\s*=\s*connectorStartPoint\.map[\s\S]*?x:\s*point\.x\s*\*\s*scale[\s\S]*?y:\s*point\.y\s*\*\s*scale", display_scaled, "CanvasElement.displayScaled must scale free connector start endpoints.")
+        require(r"copy\.connectorEndPoint\s*=\s*connectorEndPoint\.map[\s\S]*?x:\s*point\.x\s*\*\s*scale[\s\S]*?y:\s*point\.y\s*\*\s*scale", display_scaled, "CanvasElement.displayScaled must scale free connector end endpoints.")
 
     document_renderer = require_block(r"private struct CanvasDocumentRenderer: View \{(?P<body>.*?)\n\}\n\nprivate struct CanvasElementView", source, "CanvasDocumentRenderer not found.")
     if document_renderer is not None:

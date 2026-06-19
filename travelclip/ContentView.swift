@@ -3467,6 +3467,12 @@ private extension CanvasElement {
         copy.brushPoints = brushPoints.map { point in
             CodablePoint(x: point.x * scale, y: point.y * scale)
         }
+        copy.connectorStartPoint = connectorStartPoint.map { point in
+            CodablePoint(x: point.x * scale, y: point.y * scale)
+        }
+        copy.connectorEndPoint = connectorEndPoint.map { point in
+            CodablePoint(x: point.x * scale, y: point.y * scale)
+        }
         return copy
     }
 }
@@ -3508,6 +3514,12 @@ private struct CanvasViewportTransform {
         copy.blur *= uniformScale
         copy.brushWidth *= uniformScale
         copy.brushPoints = element.brushPoints.map { point in
+            CodablePoint(x: point.x * xScale, y: point.y * yScale)
+        }
+        copy.connectorStartPoint = element.connectorStartPoint.map { point in
+            CodablePoint(x: point.x * xScale, y: point.y * yScale)
+        }
+        copy.connectorEndPoint = element.connectorEndPoint.map { point in
             CodablePoint(x: point.x * xScale, y: point.y * yScale)
         }
         return copy
