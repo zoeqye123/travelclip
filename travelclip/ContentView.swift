@@ -1074,6 +1074,59 @@ private struct CanvasInsertStatusBanner: View {
     }
 }
 
+private enum InteractionTelemetry {
+    static func logTap(componentID: String, disabled: Bool, location: CGPoint?) {
+        let locationText: String
+        if let location {
+            locationText = "x=\(Int(location.x.rounded())) y=\(Int(location.y.rounded()))"
+        } else {
+            locationText = "x=unknown y=unknown"
+        }
+        print("[InteractionTelemetry] component=\(componentID) disabled=\(disabled) \(locationText)")
+    }
+
+    static func feedback(disabled: Bool) {
+        if disabled {
+            UINotificationFeedbackGenerator().notificationOccurred(.warning)
+        } else {
+            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+        }
+    }
+}
+
+private struct TrackedEditorToolButton<Label: View>: View {
+    let componentID: String
+    let disabled: Bool
+    let action: () -> Void
+    @ViewBuilder var label: Label
+    @State private var buttonFrame: CGRect = .zero
+
+    var body: some View {
+        label
+            .contentShape(Rectangle())
+            .background(
+                GeometryReader { proxy in
+                    Color.clear
+                        .onAppear {
+                            buttonFrame = proxy.frame(in: .global)
+                        }
+                        .onChange(of: proxy.size) { _, _ in
+                            buttonFrame = proxy.frame(in: .global)
+                        }
+                }
+            )
+            .onTapGesture {
+                let center = CGPoint(x: buttonFrame.midX, y: buttonFrame.midY)
+                InteractionTelemetry.logTap(componentID: componentID, disabled: disabled, location: center)
+                InteractionTelemetry.feedback(disabled: disabled)
+                guard !disabled else { return }
+                action()
+            }
+            .accessibilityAddTraits(disabled ? .isStaticText : .isButton)
+            .accessibilityHint(disabled ? Text("Unavailable for the current selection") : Text(""))
+    }
+}
+
 private struct TapePlacementBar: View {
     let title: String
     let onDone: () -> Void
@@ -2389,13 +2442,12 @@ private struct EditorTopBar: View {
 
     var body: some View {
         HStack(spacing: 6) {
-            Button(action: onBack) {
+            TrackedEditorToolButton(componentID: "editor.top.back", disabled: false, action: onBack) {
                 Image(systemName: "arrow.left")
                     .font(.system(size: 21, weight: .semibold))
                     .frame(width: 34, height: 44)
+                    .foregroundStyle(Color.clay)
             }
-            .buttonStyle(.plain)
-            .foregroundStyle(Color.clay)
 
             Spacer(minLength: 2)
 
@@ -2405,7 +2457,7 @@ private struct EditorTopBar: View {
             EditorTopTool(icon: "square.dashed", title: "Multi", selected: activePanel == .multi, disabled: false, action: onMulti)
             EditorTopTool(icon: "ellipsis", title: "More", selected: activePanel == .more, disabled: false, action: onMore)
 
-            Button(action: onDone) {
+            TrackedEditorToolButton(componentID: "editor.top.done", disabled: false, action: onDone) {
                 Text("OK")
                     .font(.system(size: 13, weight: .bold, design: .rounded))
                     .foregroundStyle(Color.paper)
@@ -2414,7 +2466,6 @@ private struct EditorTopBar: View {
                     .clipShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
                     .shadow(color: Color.clay.opacity(0.18), radius: 0, x: 4, y: 4)
             }
-            .buttonStyle(.plain)
         }
         .padding(.horizontal, 10)
         .padding(.top, 7)
@@ -2430,7 +2481,7 @@ private struct EditorTopTool: View {
     let action: () -> Void
 
     var body: some View {
-        Button(action: action) {
+        TrackedEditorToolButton(componentID: "editor.top.\(normalizedComponentID(title))", disabled: disabled, action: action) {
             VStack(spacing: 2) {
                 Image(systemName: icon)
                     .font(.system(size: 20, weight: .semibold))
@@ -2445,288 +2496,11 @@ private struct EditorTopTool: View {
             .background(selected ? Color.paper.opacity(0.55) : Color.clear)
             .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
         }
-        .buttonStyle(.plain)
-        .disabled(disabled)
-    }
-}
-
-private struct CanvasScrollContainer<Content: View>: UIViewRepresentable {
-    let pageID: UUID
-    let contentSize: CGSize
-    let scrollEnabled: Bool
-    let interactionLocked: Bool
-    let panExclusionRects: [CGRect]
-    let viewportPadding: UIEdgeInsets
-    let onZoomingChanged: (Bool) -> Void
-    @ViewBuilder var content: Content
-
-    func makeCoordinator() -> Coordinator {
-        Coordinator()
     }
 
-    func makeUIView(context: Context) -> UIScrollView {
-        let scrollView = FittingScrollView()
-        scrollView.delegate = context.coordinator
-        scrollView.backgroundColor = .clear
-        scrollView.showsHorizontalScrollIndicator = false
-        scrollView.showsVerticalScrollIndicator = false
-        scrollView.bounces = false
-        scrollView.bouncesZoom = false
-        scrollView.contentInsetAdjustmentBehavior = .never
-        scrollView.scrollsToTop = false
-        scrollView.decelerationRate = .fast
-        scrollView.delaysContentTouches = false
-        scrollView.canCancelContentTouches = true
-        scrollView.alwaysBounceHorizontal = false
-        scrollView.alwaysBounceVertical = false
-        scrollView.clipsToBounds = true
-        scrollView.onLayout = { [weak coordinator = context.coordinator] scrollView in
-            coordinator?.fitContentIfNeeded(in: scrollView, force: false)
-        }
-
-        let hostingController = UIHostingController(rootView: content)
-        hostingController.view.backgroundColor = .clear
-        hostingController.view.translatesAutoresizingMaskIntoConstraints = true
-        scrollView.addSubview(hostingController.view)
-
-        context.coordinator.hostingController = hostingController
-        context.coordinator.hostedView = hostingController.view
-        scrollView.hostedView = hostingController.view
-        return scrollView
-    }
-
-    func updateUIView(_ scrollView: UIScrollView, context: Context) {
-        context.coordinator.hostingController?.rootView = content
-        if let hostedView = context.coordinator.hostedView,
-           hostedView.bounds.size != contentSize {
-            hostedView.transform = .identity
-            hostedView.frame = CGRect(origin: .zero, size: contentSize)
-        }
-        context.coordinator.viewportPadding = viewportPadding
-        context.coordinator.onZoomingChanged = onZoomingChanged
-        context.coordinator.interactionLocked = interactionLocked
-        (scrollView as? FittingScrollView)?.viewportGesturesEnabled = scrollEnabled
-        (scrollView as? FittingScrollView)?.panExclusionRects = panExclusionRects
-        scrollView.isScrollEnabled = true
-        scrollView.pinchGestureRecognizer?.isEnabled = scrollEnabled
-        scrollView.panGestureRecognizer.isEnabled = scrollEnabled
-        if !scrollEnabled {
-            context.coordinator.notifyZooming(false)
-        }
-
-        guard scrollView.bounds.width > 0, scrollView.bounds.height > 0 else {
-            context.coordinator.pageID = pageID
-            context.coordinator.contentSize = contentSize
-            context.coordinator.needsInitialFit = true
-            return
-        }
-
-        let fitScale = context.coordinator.scaleToFit(in: scrollView.bounds.size)
-        let minScale = min(max(fitScale, 0.2), 3.2)
-        scrollView.minimumZoomScale = minScale
-        scrollView.maximumZoomScale = 3.2
-
-        let pageChanged = context.coordinator.pageID != pageID
-        let contentSizeChanged = context.coordinator.contentSize != contentSize
-        let boundsChanged = context.coordinator.boundsSize != scrollView.bounds.size
-        let zoomBelowMinimum = scrollView.zoomScale < minScale
-        let shouldFit = (context.coordinator.needsInitialFit || pageChanged || contentSizeChanged || boundsChanged || zoomBelowMinimum) &&
-            !scrollView.isTracking &&
-            !scrollView.isDragging &&
-            !scrollView.isDecelerating &&
-            !scrollView.isZooming &&
-            !scrollView.isZoomBouncing
-
-        if shouldFit {
-            context.coordinator.pageID = pageID
-            context.coordinator.contentSize = contentSize
-            context.coordinator.boundsSize = scrollView.bounds.size
-            context.coordinator.needsInitialFit = false
-            context.coordinator.prepareHostedView(in: scrollView)
-            scrollView.setZoomScale(minScale, animated: false)
-            context.coordinator.centerContent(in: scrollView)
-            context.coordinator.centerFittedContent(in: scrollView)
-            scrollView.layoutIfNeeded()
-            context.coordinator.prepareHostedView(in: scrollView)
-            context.coordinator.centerContent(in: scrollView)
-            context.coordinator.centerFittedContent(in: scrollView)
-        } else {
-            context.coordinator.pageID = pageID
-            context.coordinator.contentSize = contentSize
-            if !boundsChanged {
-                context.coordinator.boundsSize = scrollView.bounds.size
-            }
-            context.coordinator.prepareHostedView(in: scrollView)
-            context.coordinator.centerContent(in: scrollView)
-        }
-    }
-
-    private final class FittingScrollView: UIScrollView {
-        var onLayout: ((UIScrollView) -> Void)?
-        weak var hostedView: UIView?
-        var viewportGesturesEnabled = true
-        var panExclusionRects: [CGRect] = []
-
-        override func layoutSubviews() {
-            super.layoutSubviews()
-            onLayout?(self)
-        }
-
-        override func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
-            if !viewportGesturesEnabled,
-               gestureRecognizer === panGestureRecognizer || gestureRecognizer === pinchGestureRecognizer {
-                return false
-            }
-            if gestureRecognizer === panGestureRecognizer,
-               gestureRecognizer.numberOfTouches <= 1,
-               let hostedView,
-               !panExclusionRects.isEmpty {
-                let point = hostedView.convert(gestureRecognizer.location(in: self), from: self)
-                if panExclusionRects.contains(where: { $0.insetBy(dx: -18, dy: -18).contains(point) }) {
-                    return false
-                }
-            }
-            return super.gestureRecognizerShouldBegin(gestureRecognizer)
-        }
-    }
-
-    final class Coordinator: NSObject, UIScrollViewDelegate {
-        var hostingController: UIHostingController<Content>?
-        weak var hostedView: UIView?
-        var pageID: UUID?
-        var contentSize: CGSize = .zero
-        var boundsSize: CGSize = .zero
-        var viewportPadding: UIEdgeInsets = .zero
-        var interactionLocked = false
-        var onZoomingChanged: ((Bool) -> Void)?
-        var needsInitialFit = true
-        private var zoomingNotified = false
-
-        func viewForZooming(in scrollView: UIScrollView) -> UIView? {
-            hostedView
-        }
-
-        func scrollViewWillBeginZooming(_ scrollView: UIScrollView, with view: UIView?) {
-            notifyZooming(true)
-        }
-
-        func scrollViewDidZoom(_ scrollView: UIScrollView) {
-            notifyZooming(true)
-        }
-
-        func scrollViewDidEndZooming(_ scrollView: UIScrollView, with view: UIView?, atScale scale: CGFloat) {
-            centerContent(in: scrollView)
-            notifyZooming(false)
-        }
-
-        func scrollViewDidEndDragging(_ scrollView: UIScrollView, willDecelerate decelerate: Bool) {
-            if !decelerate {
-                centerContent(in: scrollView)
-            }
-        }
-
-        func scrollViewDidEndDecelerating(_ scrollView: UIScrollView) {
-            centerContent(in: scrollView)
-        }
-
-        func fitContentIfNeeded(in scrollView: UIScrollView, force: Bool) {
-            guard contentSize.width > 0,
-                  contentSize.height > 0,
-                  scrollView.bounds.width > 0,
-                  scrollView.bounds.height > 0,
-                  force || needsInitialFit || boundsSize != scrollView.bounds.size,
-                  !scrollView.isTracking,
-                  !scrollView.isDragging,
-                  !scrollView.isDecelerating,
-                  !scrollView.isZooming,
-                  !scrollView.isZoomBouncing else {
-                return
-            }
-
-            let fitScale = scaleToFit(in: scrollView.bounds.size)
-            let minScale = min(max(fitScale, 0.2), 3.2)
-            scrollView.minimumZoomScale = minScale
-            scrollView.maximumZoomScale = 3.2
-            boundsSize = scrollView.bounds.size
-            needsInitialFit = false
-            prepareHostedView(in: scrollView)
-            scrollView.setZoomScale(minScale, animated: false)
-            centerContent(in: scrollView)
-            centerFittedContent(in: scrollView)
-            scrollView.layoutIfNeeded()
-            prepareHostedView(in: scrollView)
-            centerContent(in: scrollView)
-            centerFittedContent(in: scrollView)
-        }
-
-        func prepareHostedView(in scrollView: UIScrollView) {
-            scrollView.contentSize = contentSize
-            guard let hostedView else { return }
-            hostedView.transform = .identity
-            hostedView.frame = CGRect(origin: .zero, size: contentSize)
-        }
-
-        func centerContent(in scrollView: UIScrollView) {
-            let scaledWidth = contentSize.width * scrollView.zoomScale
-            let scaledHeight = contentSize.height * scrollView.zoomScale
-            let availableWidth = max(scrollView.bounds.width - viewportPadding.left - viewportPadding.right, 0)
-            let availableHeight = max(scrollView.bounds.height - viewportPadding.top - viewportPadding.bottom, 0)
-            let horizontalInset = max((availableWidth - scaledWidth) / 2, 0)
-            let verticalInset = max((availableHeight - scaledHeight) / 2, 0)
-            scrollView.contentInset = UIEdgeInsets(
-                top: viewportPadding.top + verticalInset,
-                left: viewportPadding.left + horizontalInset,
-                bottom: viewportPadding.bottom + verticalInset,
-                right: viewportPadding.right + horizontalInset
-            )
-
-            guard let hostedView else { return }
-            hostedView.frame = CGRect(origin: .zero, size: contentSize)
-        }
-
-        func scaleToFit(in boundsSize: CGSize) -> CGFloat {
-            let availableWidth = max(boundsSize.width - viewportPadding.left - viewportPadding.right, 1)
-            let availableHeight = max(boundsSize.height - viewportPadding.top - viewportPadding.bottom, 1)
-            return min(
-                availableWidth / max(contentSize.width, 1),
-                availableHeight / max(contentSize.height, 1)
-            )
-        }
-
-        func notifyZooming(_ isZooming: Bool) {
-            guard zoomingNotified != isZooming else { return }
-            zoomingNotified = isZooming
-            DispatchQueue.main.async { [weak self] in
-                self?.onZoomingChanged?(isZooming)
-            }
-        }
-
-        func centerFittedContent(in scrollView: UIScrollView) {
-            let scaledWidth = contentSize.width * scrollView.zoomScale
-            let scaledHeight = contentSize.height * scrollView.zoomScale
-            let inset = scrollView.contentInset
-            let offsetX = centeredOffset(
-                scaledLength: scaledWidth,
-                viewportLength: scrollView.bounds.width,
-                leadingInset: inset.left,
-                trailingInset: inset.right
-            )
-            let offsetY = centeredOffset(
-                scaledLength: scaledHeight,
-                viewportLength: scrollView.bounds.height,
-                leadingInset: inset.top,
-                trailingInset: inset.bottom
-            )
-            scrollView.setContentOffset(CGPoint(x: offsetX, y: offsetY), animated: false)
-        }
-
-        private func centeredOffset(scaledLength: CGFloat, viewportLength: CGFloat, leadingInset: CGFloat, trailingInset: CGFloat) -> CGFloat {
-            let scrollableLength = scaledLength + leadingInset + trailingInset
-            let centered = (scrollableLength - viewportLength) / 2 - leadingInset
-            let minimum = -leadingInset
-            let maximum = max(minimum, scaledLength + trailingInset - viewportLength)
-            return min(max(centered, minimum), maximum)
-        }
+    private func normalizedComponentID(_ title: String) -> String {
+        title.lowercased()
+            .replacingOccurrences(of: " ", with: "-")
     }
 }
 
@@ -2780,20 +2554,24 @@ private struct CanvasWorkspace: View {
     @State private var activeGuides: CanvasSnapGuides?
     @State private var activeCanvasInteractionCount = 0
     @State private var isViewportZooming = false
+    @State private var viewportSize: CGSize = .zero
 
     private let gridSpacing: CGFloat = 36
     private let toolbarColorOptions = ["#2E2824", "#B77255", "#C4563F", "#7AA08C", "#A9C0D2", "#D99A8C"]
 
-    private var canvasScale: CGFloat {
-        1
+    private var displaySize: CGSize {
+        guard viewportSize.width > 0, viewportSize.height > 0 else {
+            return document.canvasSize.cgSize
+        }
+        return viewportSize
     }
 
-    private var displaySize: CGSize {
-        CGSize(width: document.canvasSize.width * effectiveScale, height: document.canvasSize.height * effectiveScale)
+    private var viewportTransform: CanvasViewportTransform {
+        CanvasViewportTransform(documentSize: document.canvasSize.cgSize, viewportSize: displaySize)
     }
 
     private var effectiveScale: CGFloat {
-        canvasScale
+        viewportTransform.uniformScale
     }
 
     private var isCanvasInteracting: Bool {
@@ -2801,32 +2579,25 @@ private struct CanvasWorkspace: View {
     }
 
     var body: some View {
-        ZStack(alignment: .top) {
-            CanvasScrollContainer(
-                pageID: document.pageID,
-                contentSize: displaySize,
-                scrollEnabled: activeCanvasTool == nil && !isCanvasInteracting && selectedElementIDs.isEmpty,
-                interactionLocked: isCanvasInteracting || !selectedElementIDs.isEmpty,
-                panExclusionRects: elementPanExclusionRects,
-                viewportPadding: UIEdgeInsets(top: 12, left: 18, bottom: 18, right: 18),
-                onZoomingChanged: { isZooming in
-                    isViewportZooming = isZooming
-                }
-            ) {
+        GeometryReader { proxy in
+            ZStack(alignment: .top) {
                 canvasBody
                     .frame(width: displaySize.width, height: displaySize.height)
-            }
-            .transaction { transaction in
-                transaction.animation = nil
-                transaction.disablesAnimations = true
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            .padding(2)
-            .clipped()
+                    .transaction { transaction in
+                        transaction.animation = nil
+                        transaction.disablesAnimations = true
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                    .clipped()
 
-            fixedSelectionToolbar
-        }
-        .onAppear {
+                fixedSelectionToolbar
+            }
+            .onAppear {
+                updateViewportSize(proxy.size)
+            }
+            .onChange(of: proxy.size) { size in
+                updateViewportSize(size)
+            }
         }
         .onChange(of: document.pageID) { _ in
             elementTransformPreview = [:]
@@ -2856,6 +2627,15 @@ private struct CanvasWorkspace: View {
         }
     }
 
+    private func updateViewportSize(_ size: CGSize) {
+        let normalized = CGSize(width: max(size.width, 1), height: max(size.height, 1))
+        guard viewportSize != normalized else { return }
+        DispatchQueue.main.async {
+            viewportSize = normalized
+            isViewportZooming = false
+        }
+    }
+
     private var canvasBody: some View {
         ZStack {
             CanvasSurface(background: document.background)
@@ -2867,20 +2647,20 @@ private struct CanvasWorkspace: View {
                 }
 
             if let activeGuides {
-                CanvasSnapGuideOverlay(guides: activeGuides, canvasSize: document.canvasSize, scale: effectiveScale)
+                CanvasSnapGuideOverlay(guides: activeGuides, transform: viewportTransform)
                     .allowsHitTesting(false)
             }
 
             ForEach(document.elements.filter { !$0.hidden }.sorted { $0.zIndex < $1.zIndex }) { element in
                 let renderedElement = elementTransformPreview[element.id] ?? element
                 CanvasElementView(
-                    element: renderedElement.displayScaled(by: effectiveScale),
+                    element: viewportTransform.displayElement(renderedElement),
                     selected: selectedElementIDs.contains(element.id),
                     performanceMode: isCanvasInteracting || isViewportZooming,
                     imageURL: imageURL
                 )
                     .rotationEffect(.degrees(renderedElement.rotation))
-                    .position(x: renderedElement.x * effectiveScale, y: renderedElement.y * effectiveScale)
+                    .position(viewportTransform.displayPoint(CGPoint(x: renderedElement.x, y: renderedElement.y)))
                     .opacity(renderedElement.opacity)
                     .highPriorityGesture(
                         DragGesture(minimumDistance: 8, coordinateSpace: .named("canvasSpace"))
@@ -2902,8 +2682,8 @@ private struct CanvasWorkspace: View {
                                 let start = dragStartFrames[element.id] ?? CGPoint(x: element.x, y: element.y)
                                 dragStartFrames[element.id] = start
                                 let proposed = CGPoint(
-                                    x: start.x + canvasTranslation.width / effectiveScale,
-                                    y: start.y + canvasTranslation.height / effectiveScale
+                                    x: start.x + canvasTranslation.width / viewportTransform.xScale,
+                                    y: start.y + canvasTranslation.height / viewportTransform.yScale
                                 )
                                 let snapped = snappedPoint(proposed)
                                 activeGuides = snapped.guides
@@ -2950,8 +2730,8 @@ private struct CanvasWorkspace: View {
 
             if let connector = selectedFreeConnectorElement {
                 ConnectorEndpointHandles(
-                    start: connector.freeConnectorEndpoints.start.scaledForCanvas(by: effectiveScale),
-                    end: connector.freeConnectorEndpoints.end.scaledForCanvas(by: effectiveScale),
+                    start: viewportTransform.displayPoint(connector.freeConnectorEndpoints.start),
+                    end: viewportTransform.displayPoint(connector.freeConnectorEndpoints.end),
                     onDragStart: {
                         beginCanvasInteraction()
                         onSelect(connector.id, false)
@@ -2963,7 +2743,7 @@ private struct CanvasWorkspace: View {
                         elementTransformPreview[connector.id] = previewFreeConnector(
                             connector,
                             moving: endpoint,
-                            to: CGPoint(x: location.x / effectiveScale, y: location.y / effectiveScale)
+                            to: viewportTransform.documentPoint(location)
                         )
                     },
                     onDragEnded: { endpoint in
@@ -2983,7 +2763,7 @@ private struct CanvasWorkspace: View {
 
             if selectedElementIDs.count > 1, let selectionRect {
                 MultiSelectionBox(
-                    rect: selectionRect.scaled(by: effectiveScale),
+                    rect: viewportTransform.displayRect(selectionRect),
                     onMoveStart: {
                         beginCanvasInteraction()
                         captureSelectionUndo()
@@ -2994,7 +2774,7 @@ private struct CanvasWorkspace: View {
                     },
                     onMoveChanged: { translation in
                         guard !selectionDragStartFrames.isEmpty else { return }
-                        let documentTranslation = CGSize(width: translation.width / effectiveScale, height: translation.height / effectiveScale)
+                        let documentTranslation = CGSize(width: translation.width / viewportTransform.xScale, height: translation.height / viewportTransform.yScale)
                         let snappedTranslation = snappedSelectionTranslation(documentTranslation)
                         activeGuides = snappedTranslation.guides
                         selectionDragTranslation = snappedTranslation.translation
@@ -3072,7 +2852,7 @@ private struct CanvasWorkspace: View {
         switch activeCanvasTool {
         case .brush:
             BrushCaptureOverlay(
-                scale: effectiveScale,
+                transform: viewportTransform,
                 colorHex: activeBrushColorHex,
                 brushWidth: activeBrushWidth,
                 opacity: activeBrushOpacity,
@@ -3081,7 +2861,7 @@ private struct CanvasWorkspace: View {
             .frame(width: displaySize.width, height: displaySize.height)
         case .arrow:
             ArrowCaptureOverlay(
-                scale: effectiveScale,
+                transform: viewportTransform,
                 colorHex: activeBrushColorHex,
                 width: activeBrushWidth,
                 onEnded: onArrowFinished
@@ -3401,8 +3181,7 @@ private struct CanvasSnapGuides {
 
 private struct CanvasSnapGuideOverlay: View {
     let guides: CanvasSnapGuides
-    let canvasSize: CodableSize
-    let scale: CGFloat
+    let transform: CanvasViewportTransform
 
     var body: some View {
         ZStack {
@@ -3410,20 +3189,17 @@ private struct CanvasSnapGuideOverlay: View {
                 Rectangle()
                     .fill(Color.clay.opacity(0.45))
                     .frame(width: 1.5)
-                    .position(x: x * scale, y: canvasSize.height * scale / 2)
+                    .position(x: transform.displayPoint(CGPoint(x: x, y: 0)).x, y: transform.viewportSize.height / 2)
             }
 
             if let y = guides.y {
                 Rectangle()
                     .fill(Color.clay.opacity(0.45))
                     .frame(height: 1.5)
-                    .position(x: canvasSize.width * scale / 2, y: y * scale)
+                    .position(x: transform.viewportSize.width / 2, y: transform.displayPoint(CGPoint(x: 0, y: y)).y)
             }
         }
-        .frame(
-            width: canvasSize.width * scale,
-            height: canvasSize.height * scale
-        )
+        .frame(width: transform.viewportSize.width, height: transform.viewportSize.height)
     }
 }
 
@@ -3625,6 +3401,51 @@ private extension CanvasElement {
         copy.brushWidth *= scale
         copy.brushPoints = brushPoints.map { point in
             CodablePoint(x: point.x * scale, y: point.y * scale)
+        }
+        return copy
+    }
+}
+
+private struct CanvasViewportTransform {
+    let documentSize: CGSize
+    let viewportSize: CGSize
+
+    var xScale: CGFloat {
+        viewportSize.width / max(documentSize.width, 1)
+    }
+
+    var yScale: CGFloat {
+        viewportSize.height / max(documentSize.height, 1)
+    }
+
+    var uniformScale: CGFloat {
+        min(xScale, yScale)
+    }
+
+    func displayPoint(_ point: CGPoint) -> CGPoint {
+        CGPoint(x: point.x * xScale, y: point.y * yScale)
+    }
+
+    func documentPoint(_ point: CGPoint) -> CGPoint {
+        CGPoint(x: point.x / max(xScale, 0.0001), y: point.y / max(yScale, 0.0001))
+    }
+
+    func displayRect(_ rect: CGRect) -> CGRect {
+        CGRect(x: rect.minX * xScale, y: rect.minY * yScale, width: rect.width * xScale, height: rect.height * yScale)
+    }
+
+    func displayElement(_ element: CanvasElement) -> CanvasElement {
+        var copy = element
+        copy.x *= xScale
+        copy.y *= yScale
+        copy.width *= xScale
+        copy.height *= yScale
+        copy.fontSize *= uniformScale
+        copy.cornerRadius *= uniformScale
+        copy.blur *= uniformScale
+        copy.brushWidth *= uniformScale
+        copy.brushPoints = element.brushPoints.map { point in
+            CodablePoint(x: point.x * xScale, y: point.y * yScale)
         }
         return copy
     }
@@ -3907,7 +3728,7 @@ private final class FontLibrary: ObservableObject {
 }
 
 private struct BrushCaptureOverlay: View {
-    let scale: CGFloat
+    let transform: CanvasViewportTransform
     let colorHex: String
     let brushWidth: CGFloat
     let opacity: Double
@@ -3921,8 +3742,8 @@ private struct BrushCaptureOverlay: View {
                 .gesture(
                     DragGesture(minimumDistance: 3, coordinateSpace: .named("canvasSpace"))
                         .onChanged { value in
-                            let point = CGPoint(x: value.location.x / scale, y: value.location.y / scale)
-                            let minimumStep = 4 / max(scale, 0.2)
+                            let point = transform.documentPoint(value.location)
+                            let minimumStep = 4 / max(transform.uniformScale, 0.2)
                             guard let last = currentPoints.last else {
                                 currentPoints.append(point)
                                 return
@@ -3939,16 +3760,16 @@ private struct BrushCaptureOverlay: View {
                 )
 
             BrushStrokePreviewLine(
-                points: currentPoints.map { CGPoint(x: $0.x * scale, y: $0.y * scale) },
+                points: currentPoints.map { transform.displayPoint($0) },
                 color: Color(hex: colorHex).opacity(opacity),
-                width: max(3, brushWidth * scale)
+                width: max(3, brushWidth * transform.uniformScale)
             )
         }
     }
 }
 
 private struct ArrowCaptureOverlay: View {
-    let scale: CGFloat
+    let transform: CanvasViewportTransform
     let colorHex: String
     let width: CGFloat
     let onEnded: (CGPoint, CGPoint) -> Void
@@ -3974,15 +3795,15 @@ private struct ArrowCaptureOverlay: View {
                             currentPoint = nil
                             guard hypot(end.x - start.x, end.y - start.y) >= 18 else { return }
                             onEnded(
-                                CGPoint(x: start.x / scale, y: start.y / scale),
-                                CGPoint(x: end.x / scale, y: end.y / scale)
+                                transform.documentPoint(start),
+                                transform.documentPoint(end)
                             )
                         }
                 )
 
             if let startPoint, let currentPoint {
                 Canvas { context, _ in
-                    let lineWidth = max(4, width * scale)
+                    let lineWidth = max(4, width * transform.uniformScale)
                     let end = currentPoint
                     let dx = end.x - startPoint.x
                     let dy = end.y - startPoint.y
@@ -4660,9 +4481,9 @@ private struct FloatingSelectionToolbar: View {
                 }
 
                 if canTuneColor {
-                    Button {
+                    TrackedEditorToolButton(componentID: "floating.selection.color-panel", disabled: false, action: {
                         expandedPanel = expandedPanel == .color ? nil : .color
-                    } label: {
+                    }) {
                         HStack(spacing: 4) {
                             Circle()
                                 .fill(Color(hex: selectedElement?.colorHex ?? colorOptions[0]))
@@ -4677,7 +4498,6 @@ private struct FloatingSelectionToolbar: View {
                         .background(Color.paper.opacity(0.9))
                         .clipShape(Capsule())
                     }
-                    .buttonStyle(.plain)
                 }
 
                 if canTuneLineWidth {
@@ -4746,15 +4566,12 @@ private struct FloatingSelectionToolbar: View {
     private var expandedColorPanel: some View {
         HStack(spacing: 8) {
             ForEach(colorOptions, id: \.self) { colorHex in
-                Button {
-                    onColor(colorHex)
-                } label: {
+                TrackedEditorToolButton(componentID: "floating.selection.color.\(colorHex.replacingOccurrences(of: "#", with: ""))", disabled: false, action: { onColor(colorHex) }) {
                     Circle()
                         .fill(Color(hex: colorHex))
                         .frame(width: 26, height: 26)
                         .overlay(Circle().stroke(selectedElement?.colorHex == colorHex ? Color.clay : Color.paper, lineWidth: selectedElement?.colorHex == colorHex ? 3 : 2))
                 }
-                .buttonStyle(.plain)
             }
         }
         .padding(.horizontal, 10)
@@ -4874,7 +4691,7 @@ private struct FloatingSelectionToolbar: View {
     }
 
     private func toolbarButton(_ icon: String, destructive: Bool = false, active: Bool = false, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
+        TrackedEditorToolButton(componentID: "floating.selection.\(normalizedComponentID(icon))", disabled: false, action: action) {
             Image(systemName: icon)
                 .font(.system(size: 13, weight: .bold))
                 .foregroundStyle(destructive ? Color.red : (active ? Color.paper : Color.clay))
@@ -4882,7 +4699,11 @@ private struct FloatingSelectionToolbar: View {
                 .background(active ? Color.clay : Color.paper.opacity(0.9))
                 .clipShape(Circle())
         }
-        .buttonStyle(.plain)
+    }
+
+    private func normalizedComponentID(_ value: String) -> String {
+        value.replacingOccurrences(of: ".", with: "-")
+            .replacingOccurrences(of: " ", with: "-")
     }
 
     private func gestureHint(_ icon: String) -> some View {
@@ -7189,9 +7010,13 @@ private struct EditorToolPanel<PhotoPicker: View>: View {
     private var shelfTabs: some View {
         HStack(spacing: 8) {
             ForEach(EditorToolShelf.allCases) { shelf in
-                Button {
+                TrackedEditorToolButton(
+                    componentID: "editor.shelf.\(shelf.rawValue)",
+                    disabled: false,
+                    action: {
                     selectedShelf = shelf
-                } label: {
+                    }
+                ) {
                     HStack(spacing: 5) {
                         Image(systemName: shelf.icon)
                             .font(.system(size: 12, weight: .bold))
@@ -7205,7 +7030,6 @@ private struct EditorToolPanel<PhotoPicker: View>: View {
                     .clipShape(Capsule())
                     .overlay(Capsule().stroke(Color.lineSoft, lineWidth: selectedShelf == shelf ? 0 : 1))
                 }
-                .buttonStyle(.plain)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -7344,9 +7168,9 @@ private struct EditorToolPanel<PhotoPicker: View>: View {
     private var moreTools: some View {
         toolButton(snapToGrid ? "grid.circle.fill" : "grid.circle", "Snap", active: snapToGrid, action: onToggleSnap)
         toolButton("square.grid.2x2", "Template", action: onTemplate)
-        toolButton("line.3.horizontal", "Background", action: onBackground)
+        toolButton("paintpalette", "Background", action: onBackground)
         toolButton("textformat.alt", "WordArt", action: onWordArt)
-        toolButton("textformat.alt", "ArtStyle", action: onWordArtStyles)
+        toolButton("wand.and.stars", "ArtStyle", action: onWordArtStyles)
         toolButton("link", "Link", action: onLink)
         toolButton("doc.badge.plus", "File", action: onFile)
         toolButton("scribble.variable", "Stroke", action: onBrush)
@@ -7354,7 +7178,7 @@ private struct EditorToolPanel<PhotoPicker: View>: View {
         toolButton("square.on.circle", "Shapes", action: onShape)
         toolButton("arrow.right", "Arrow", action: onConnector)
         toolButton("doc.on.clipboard", "Paste", action: onPaste)
-        toolButton("rectangle.fill.on.rectangle.fill", "Texture", action: onTape)
+        toolButton("rectangle.on.rectangle.angled", "Texture", action: onTape)
         toolButton("trash", "Delete", disabled: !hasSelection, action: onDelete)
     }
 
@@ -7363,63 +7187,51 @@ private struct EditorToolPanel<PhotoPicker: View>: View {
     }
 
     private func toolButton(_ icon: String, _ title: String, disabled: Bool = false, active: Bool = false, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
+        TrackedEditorToolButton(componentID: "editor.tool.\(normalizedComponentID(title))", disabled: disabled, action: action) {
             EditorToolItem(icon: icon, title: title, disabled: disabled, active: active)
         }
-        .disabled(disabled)
-        .buttonStyle(.plain)
     }
 
     private func effectButton(_ icon: String, _ title: String, active: Bool = false, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            EditorToolItem(icon: icon, title: title, disabled: selectedElementID == nil, active: active)
+        let disabled = selectedElementID == nil
+        return TrackedEditorToolButton(componentID: "editor.effect.\(normalizedComponentID(title))", disabled: disabled, action: action) {
+            EditorToolItem(icon: icon, title: title, disabled: disabled, active: active)
         }
-        .disabled(selectedElementID == nil)
-        .buttonStyle(.plain)
     }
 
     private func colorButton(_ colorHex: String) -> some View {
-        Button {
-            onColor(colorHex)
-        } label: {
+        TrackedEditorToolButton(componentID: "editor.color.\(colorHex.replacingOccurrences(of: "#", with: ""))", disabled: !hasSelection, action: { onColor(colorHex) }) {
             EditorColorToolItem(
                 colorHex: colorHex,
                 selected: selectedElement?.colorHex == colorHex,
                 disabled: !hasSelection
             )
         }
-        .disabled(!hasSelection)
-        .buttonStyle(.plain)
     }
 
     private func alignButton(_ icon: String, _ title: String, _ alignment: CanvasSelectionAlignment) -> some View {
-        Button {
-            onAlign(alignment)
-        } label: {
+        TrackedEditorToolButton(componentID: "editor.align.selection.\(normalizedComponentID(title))", disabled: !canAlign, action: { onAlign(alignment) }) {
             EditorToolItem(icon: icon, title: title, disabled: !canAlign)
         }
-        .disabled(!canAlign)
-        .buttonStyle(.plain)
     }
 
     private func canvasAlignButton(_ icon: String, _ title: String, _ alignment: CanvasSelectionAlignment) -> some View {
-        Button {
-            onAlignCanvas(alignment)
-        } label: {
+        TrackedEditorToolButton(componentID: "editor.align.canvas.\(normalizedComponentID(title))", disabled: !hasSelection, action: { onAlignCanvas(alignment) }) {
             EditorToolItem(icon: icon, title: title, disabled: !hasSelection)
         }
-        .disabled(!hasSelection)
-        .buttonStyle(.plain)
     }
 
     private func distributeButton(_ icon: String, _ title: String, _ axis: CanvasDistributionAxis) -> some View {
-        Button {
-            onDistribute(axis)
-        } label: {
+        TrackedEditorToolButton(componentID: "editor.distribute.\(normalizedComponentID(title))", disabled: !canDistribute, action: { onDistribute(axis) }) {
             EditorToolItem(icon: icon, title: title, disabled: !canDistribute)
         }
-        .disabled(!canDistribute)
-        .buttonStyle(.plain)
+    }
+
+    private func normalizedComponentID(_ title: String) -> String {
+        title.lowercased()
+            .replacingOccurrences(of: "+", with: "plus")
+            .replacingOccurrences(of: "-", with: "minus")
+            .replacingOccurrences(of: " ", with: "-")
     }
 }
 
