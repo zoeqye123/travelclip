@@ -4664,7 +4664,10 @@ private struct FloatingSelectionToolbar: View {
             Slider(
                 value: Binding(
                     get: { min(max(selectedElement?.brushWidth ?? 18, 4), 140) },
-                    set: { onSetWidth($0) }
+                    set: { value in
+                        recordSliderChange("floating.selection.line-width")
+                        onSetWidth(value)
+                    }
                 ),
                 in: 4...140,
                 step: 1
@@ -4692,7 +4695,10 @@ private struct FloatingSelectionToolbar: View {
             Slider(
                 value: Binding(
                     get: { min(max(selectedElement?.width ?? 320, 90), 1460) },
-                    set: { onSetTapeLength($0) }
+                    set: { value in
+                        recordSliderChange("floating.selection.tape-length")
+                        onSetTapeLength(value)
+                    }
                 ),
                 in: 90...1460,
                 step: 5
@@ -4726,7 +4732,10 @@ private struct FloatingSelectionToolbar: View {
             Slider(
                 value: Binding(
                     get: { min(max(selectedElement?.opacity ?? 1, 0.2), 1) },
-                    set: { onSetOpacity($0) }
+                    set: { value in
+                        recordSliderChange("floating.selection.opacity")
+                        onSetOpacity(value)
+                    }
                 ),
                 in: 0.2...1,
                 step: 0.02
@@ -4747,7 +4756,10 @@ private struct FloatingSelectionToolbar: View {
                 Slider(
                     value: Binding(
                         get: { min(max(selectedElement?.cornerRadius ?? 0, 0), 80) },
-                        set: { onSetCornerRadius($0) }
+                        set: { value in
+                            recordSliderChange("floating.selection.corner-radius")
+                            onSetCornerRadius(value)
+                        }
                     ),
                     in: 0...80,
                     step: 1
@@ -4780,6 +4792,10 @@ private struct FloatingSelectionToolbar: View {
     private func normalizedComponentID(_ value: String) -> String {
         value.replacingOccurrences(of: ".", with: "-")
             .replacingOccurrences(of: " ", with: "-")
+    }
+
+    private func recordSliderChange(_ componentID: String) {
+        InteractionTelemetry.recordAction(componentID: componentID, disabled: false)
     }
 
     private func gestureHint(_ icon: String) -> some View {
@@ -7623,11 +7639,31 @@ private struct CanvasToolStrip: View {
                 }
             }
 
-            Slider(value: Binding(get: { min(max(width, widthRange.lowerBound), widthRange.upperBound) }, set: onWidth), in: widthRange, step: 1)
+            Slider(
+                value: Binding(
+                    get: { min(max(width, widthRange.lowerBound), widthRange.upperBound) },
+                    set: { value in
+                        recordSliderChange("canvas.toolstrip.width")
+                        onWidth(value)
+                    }
+                ),
+                in: widthRange,
+                step: 1
+            )
                 .frame(width: 96)
 
             if activeTool == .brush {
-                Slider(value: Binding(get: { opacity }, set: onOpacity), in: 0.12...1, step: 0.02)
+                Slider(
+                    value: Binding(
+                        get: { opacity },
+                        set: { value in
+                            recordSliderChange("canvas.toolstrip.opacity")
+                            onOpacity(value)
+                        }
+                    ),
+                    in: 0.12...1,
+                    step: 0.02
+                )
                     .frame(width: 72)
 
                 TrackedEditorToolButton(componentID: "canvas.toolstrip.brush-library", disabled: false, action: onBrushLibrary) {
@@ -7640,6 +7676,10 @@ private struct CanvasToolStrip: View {
         .background(Color.paper.opacity(0.86))
         .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(Color.lineSoft, lineWidth: 1.1))
+    }
+
+    private func recordSliderChange(_ componentID: String) {
+        InteractionTelemetry.recordAction(componentID: componentID, disabled: false)
     }
 }
 
@@ -7690,7 +7730,10 @@ private struct LineStyleToolStrip: View {
             Slider(
                 value: Binding(
                     get: { min(max(element.brushWidth, 4), 140) },
-                    set: { onSetWidth($0) }
+                    set: { value in
+                        recordSliderChange("canvas.line.width.slider")
+                        onSetWidth(value)
+                    }
                 ),
                 in: 4...140,
                 step: 1
@@ -7724,6 +7767,10 @@ private struct LineStyleToolStrip: View {
                 .background(Color.clay)
                 .clipShape(Circle())
         }
+    }
+
+    private func recordSliderChange(_ componentID: String) {
+        InteractionTelemetry.recordAction(componentID: componentID, disabled: false)
     }
 }
 
@@ -7772,7 +7819,10 @@ private struct TapeLengthToolStrip: View {
             Slider(
                 value: Binding(
                     get: { min(max(element.width, 90), 1460) },
-                    set: { onSetLength($0) }
+                    set: { value in
+                        recordSliderChange("canvas.tape.length.slider")
+                        onSetLength(value)
+                    }
                 ),
                 in: 90...1460,
                 step: 5
@@ -7795,6 +7845,10 @@ private struct TapeLengthToolStrip: View {
                 .background(Color.clay)
                 .clipShape(Circle())
         }
+    }
+
+    private func recordSliderChange(_ componentID: String) {
+        InteractionTelemetry.recordAction(componentID: componentID, disabled: false)
     }
 }
 
