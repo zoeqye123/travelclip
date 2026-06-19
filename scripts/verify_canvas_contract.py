@@ -300,6 +300,8 @@ def main() -> None:
         r"toolButton\(\"textformat\.alt\",\s*\"WordArt\"",
         r"toolButton\(\"textformat\.alt\",\s*\"ArtStyle\"",
         r"toolButton\(\"rectangle\.fill\.on\.rectangle\.fill\",\s*\"Texture\"",
+        r"toolButton\(\"square\.stack\.3d\.up\",\s*\"Group\"",
+        r"toolButton\(\"square\.stack\.3d\.down\.right\",\s*\"Ungroup\"",
         r"preset\.kind\s*==\s*\.wordArt\s*\?\s*\"textformat\.alt\"",
         r"case\s+\.wordArt:\s+return\s+\"textformat\.alt\"",
     ]:
@@ -311,6 +313,8 @@ def main() -> None:
         (r"preset\.kind\s*==\s*\.wordArt\s*\?\s*\"textformat\.size\"", "WordArt preset cards must use the text sizing icon."),
         (r"toolButton\(\"wand\.and\.stars\",\s*\"ArtStyle\"", "ArtStyle tool must use the wand icon."),
         (r"toolButton\(\"rectangle\.on\.rectangle\.angled\",\s*\"Texture\"", "Texture tool must use a layered texture icon."),
+        (r"toolButton\(\"rectangle\.3\.group\",\s*\"Group\"", "Group action must use a grouping icon, not a layer stack icon."),
+        (r"toolButton\(\"rectangle\.split\.3x1\",\s*\"Ungroup\"", "Ungroup action must use a split-group icon, not a layer stack icon."),
         (r"case\s+\.adjust:\s+return\s+\"dial\.medium\"", "Adjust shelf must use a tuning dial icon."),
         (r"case\s+\.wordArt:\s+return\s+\"textformat\.size\"", "WordArt category and element icons must use the text sizing icon."),
     ]
