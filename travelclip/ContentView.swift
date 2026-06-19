@@ -3239,6 +3239,10 @@ private struct CanvasDocumentRenderer: View {
         CGSize(width: document.canvasSize.width * scale, height: document.canvasSize.height * scale)
     }
 
+    private var renderTransform: CanvasViewportTransform {
+        CanvasViewportTransform(documentSize: document.canvasSize.cgSize, viewportSize: renderSize)
+    }
+
     private var visibleElements: [CanvasElement] {
         let elements = document.elements.filter { !$0.hidden }.sorted { $0.zIndex < $1.zIndex }
         if let elementLimit {
@@ -3254,12 +3258,12 @@ private struct CanvasDocumentRenderer: View {
 
             ForEach(visibleElements) { element in
                 CanvasElementView(
-                    element: element.displayScaled(by: scale),
+                    element: renderTransform.displayElement(element),
                     selected: selectedElementIDs.contains(element.id),
                     imageURL: { repository.imageURL(for: $0) }
                 )
                 .rotationEffect(.degrees(element.rotation))
-                .position(x: element.x * scale, y: element.y * scale)
+                .position(renderTransform.displayPoint(CGPoint(x: element.x, y: element.y)))
                 .opacity(element.opacity)
             }
         }
@@ -6413,8 +6417,17 @@ private struct CanvasTemplatePreview: View {
     let imageURL: (String?) -> URL?
 
     private let previewWidth: CGFloat = 132
-    private var scale: CGFloat { previewWidth / 1080 }
-    private var previewHeight: CGFloat { 1920 * scale }
+    private var previewHeight: CGFloat {
+        previewWidth * CanvasDocument.designCanvasSize.height / CanvasDocument.designCanvasSize.width
+    }
+
+    private var previewSize: CGSize {
+        CGSize(width: previewWidth, height: previewHeight)
+    }
+
+    private var previewTransform: CanvasViewportTransform {
+        CanvasViewportTransform(documentSize: CanvasDocument.designCanvasSize.cgSize, viewportSize: previewSize)
+    }
 
     var body: some View {
         ZStack {
@@ -6422,9 +6435,9 @@ private struct CanvasTemplatePreview: View {
                 .frame(width: previewWidth, height: previewHeight)
 
             ForEach(template.elements.sorted { $0.zIndex < $1.zIndex }) { element in
-                CanvasElementView(element: element.displayScaled(by: scale), selected: false, imageURL: imageURL)
+                CanvasElementView(element: previewTransform.displayElement(element), selected: false, imageURL: imageURL)
                     .rotationEffect(.degrees(element.rotation))
-                    .position(x: element.x * scale, y: element.y * scale)
+                    .position(previewTransform.displayPoint(CGPoint(x: element.x, y: element.y)))
                     .opacity(element.opacity)
             }
         }

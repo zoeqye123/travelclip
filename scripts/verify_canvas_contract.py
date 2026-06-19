@@ -128,6 +128,23 @@ def main() -> None:
         if display_element is not None:
             forbid(r"copy\.x\s*\*=|copy\.y\s*\*=", display_element, "CanvasViewportTransform.displayElement must not scale element centers because parent positioning uses displayPoint.")
 
+    document_renderer = require_block(r"private struct CanvasDocumentRenderer: View \{(?P<body>.*?)\n\}\n\nprivate struct CanvasElementView", source, "CanvasDocumentRenderer not found.")
+    if document_renderer is not None:
+        require(r"renderTransform:\s*CanvasViewportTransform", document_renderer, "CanvasDocumentRenderer must render through CanvasViewportTransform.")
+        require(r"CanvasViewportTransform\(documentSize:\s*document\.canvasSize\.cgSize,\s*viewportSize:\s*renderSize\)", document_renderer, "CanvasDocumentRenderer must map document coordinates into its render size.")
+        require(r"renderTransform\.displayElement\(element\)", document_renderer, "CanvasDocumentRenderer elements must use displayElement.")
+        require(r"\.position\(renderTransform\.displayPoint\(CGPoint\(x:\s*element\.x,\s*y:\s*element\.y\)\)\)", document_renderer, "CanvasDocumentRenderer element centers must use displayPoint.")
+        forbid(r"displayScaled\(by:\s*scale\)|element\.x\s*\*\s*scale|element\.y\s*\*\s*scale", document_renderer, "CanvasDocumentRenderer must not use legacy scalar element rendering.")
+
+    template_preview = require_block(r"private struct CanvasTemplatePreview: View \{(?P<body>.*?)\n\}\n\nprivate struct StickerChoiceCard", source, "CanvasTemplatePreview not found.")
+    if template_preview is not None:
+        require(r"CanvasDocument\.designCanvasSize", template_preview, "Template previews must derive their aspect ratio from the canonical design canvas size.")
+        require(r"previewTransform:\s*CanvasViewportTransform", template_preview, "Template previews must render through CanvasViewportTransform.")
+        require(r"CanvasViewportTransform\(documentSize:\s*CanvasDocument\.designCanvasSize\.cgSize,\s*viewportSize:\s*previewSize\)", template_preview, "Template previews must map design coordinates into the preview size.")
+        require(r"previewTransform\.displayElement\(element\)", template_preview, "Template preview elements must use displayElement.")
+        require(r"\.position\(previewTransform\.displayPoint\(CGPoint\(x:\s*element\.x,\s*y:\s*element\.y\)\)\)", template_preview, "Template preview element centers must use displayPoint.")
+        forbid(r"\b1080\b|\b1920\b|displayScaled\(by:\s*scale\)|element\.x\s*\*\s*scale|element\.y\s*\*\s*scale", template_preview, "Template previews must not duplicate design dimensions or use legacy scalar rendering.")
+
     require(r"enum\s+InteractionTelemetry", source, "InteractionTelemetry is required for button tap diagnostics.")
     require(r"struct\s+TrackedEditorToolButton", source, "TrackedEditorToolButton is required for editor button feedback and diagnostics.")
     require(r"InteractionTelemetry\.logTap", source, "Tracked editor buttons must log tap component IDs and locations.")
