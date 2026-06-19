@@ -475,9 +475,9 @@ private struct NotebookDetailView: View {
 
                         Spacer()
 
-                        Button {
+                        TrackedEditorToolButton(componentID: "notebook.detail.edit", disabled: false, action: {
                             showingNotebookEditor = true
-                        } label: {
+                        }) {
                             Image(systemName: "slider.horizontal.3")
                                 .font(.system(size: 17, weight: .semibold))
                                 .foregroundStyle(Color.ink)
@@ -486,16 +486,17 @@ private struct NotebookDetailView: View {
                                 .clipShape(Circle())
                                 .overlay(Circle().stroke(Color.lineSoft, lineWidth: 1.3))
                         }
-                        .buttonStyle(.plain)
 
                         Menu {
                             Button {
+                                InteractionTelemetry.recordAction(componentID: "notebook.detail.export.pdf", disabled: false)
                                 exportNotebookPDF()
                             } label: {
                                 Label("PDF", systemImage: "doc.richtext")
                             }
 
                             Button {
+                                InteractionTelemetry.recordAction(componentID: "notebook.detail.export.zip", disabled: false)
                                 exportNotebookZIP()
                             } label: {
                                 Label("ZIP Archive", systemImage: "doc.zipper")
@@ -512,9 +513,9 @@ private struct NotebookDetailView: View {
                         .buttonStyle(.plain)
                         .disabled(pages.isEmpty)
 
-                        Button {
+                        TrackedEditorToolButton(componentID: "notebook.detail.new-page", disabled: false, action: {
                             pageCreateContext = PageCreateContext(notebookID: notebookID)
-                        } label: {
+                        }) {
                             Image(systemName: "plus")
                                 .font(.system(size: 17, weight: .semibold))
                                 .foregroundStyle(Color.ink)
@@ -523,7 +524,6 @@ private struct NotebookDetailView: View {
                                 .clipShape(Circle())
                                 .overlay(Circle().stroke(Color.lineSoft, lineWidth: 1.3))
                         }
-                        .buttonStyle(.plain)
                     }
 
                     LazyVGrid(columns: pageColumns, spacing: 14) {
@@ -747,7 +747,7 @@ private struct NotebookPageCard: View {
     let onSetCover: () -> Void
 
     var body: some View {
-        Button(action: onOpen) {
+        TrackedEditorToolButton(componentID: "notebook.page.open.\(page.id.uuidString.lowercased())", disabled: false, action: onOpen) {
             ZStack(alignment: .topTrailing) {
                 VStack(spacing: 0) {
                     CanvasThumbnail(repository: repository, document: page.canvasDocument)
@@ -792,9 +792,18 @@ private struct NotebookPageCard: View {
                 }
 
                 Menu {
-                    Button("Rename", systemImage: "pencil", action: onRename)
-                    Button("Set as cover", systemImage: "star", action: onSetCover)
-                    Button("Delete", systemImage: "trash", role: .destructive, action: onDelete)
+                    Button("Rename", systemImage: "pencil") {
+                        InteractionTelemetry.recordAction(componentID: "notebook.page.rename.\(page.id.uuidString.lowercased())", disabled: false)
+                        onRename()
+                    }
+                    Button("Set as cover", systemImage: "star") {
+                        InteractionTelemetry.recordAction(componentID: "notebook.page.cover.\(page.id.uuidString.lowercased())", disabled: false)
+                        onSetCover()
+                    }
+                    Button("Delete", systemImage: "trash", role: .destructive) {
+                        InteractionTelemetry.recordAction(componentID: "notebook.page.delete.\(page.id.uuidString.lowercased())", disabled: false)
+                        onDelete()
+                    }
                 } label: {
                     Image(systemName: "ellipsis")
                         .font(.system(size: 18, weight: .bold))
@@ -813,7 +822,6 @@ private struct NotebookPageCard: View {
             .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Color.lineSoft, lineWidth: 1.1))
             .shadow(color: Color.shadowSoft, radius: 8, x: 0, y: 4)
         }
-        .buttonStyle(.plain)
     }
 
     private var pageDateText: String {
@@ -869,15 +877,14 @@ private struct PagePreviewView: View {
             if let page {
                 VStack(spacing: 0) {
                     HStack(spacing: 10) {
-                        Button {
+                        TrackedEditorToolButton(componentID: "page.preview.back", disabled: false, action: {
                             dismiss()
-                        } label: {
+                        }) {
                             Image(systemName: "arrow.left")
                                 .font(.system(size: 21, weight: .semibold))
                                 .foregroundStyle(Color.clay)
                                 .frame(width: 42, height: 42)
                         }
-                        .buttonStyle(.plain)
 
                         VStack(alignment: .leading, spacing: 2) {
                             Text(page.title)
@@ -892,9 +899,9 @@ private struct PagePreviewView: View {
 
                         Spacer()
 
-                        Button {
+                        TrackedEditorToolButton(componentID: "page.preview.presentation", disabled: false, action: {
                             path.append(.presentation(page.id))
-                        } label: {
+                        }) {
                             Image(systemName: "play.rectangle")
                                 .font(.system(size: 18, weight: .semibold))
                                 .foregroundStyle(Color.clay)
@@ -903,16 +910,17 @@ private struct PagePreviewView: View {
                                 .clipShape(Circle())
                                 .overlay(Circle().stroke(Color.lineSoft, lineWidth: 1.1))
                         }
-                        .buttonStyle(.plain)
 
                         Menu {
                             Button {
+                                InteractionTelemetry.recordAction(componentID: "page.preview.export.image", disabled: false)
                                 exportImage(page.canvasDocument)
                             } label: {
                                 Label("Image", systemImage: "photo")
                             }
 
                             Button {
+                                InteractionTelemetry.recordAction(componentID: "page.preview.export.pdf", disabled: false)
                                 exportPDF(page)
                             } label: {
                                 Label("PDF", systemImage: "doc.richtext")
@@ -928,9 +936,9 @@ private struct PagePreviewView: View {
                         }
                         .buttonStyle(.plain)
 
-                        Button {
+                        TrackedEditorToolButton(componentID: "page.preview.edit", disabled: false, action: {
                             path.append(.editor(page.id))
-                        } label: {
+                        }) {
                             Image(systemName: "pencil")
                                 .font(.system(size: 18, weight: .semibold))
                                 .foregroundStyle(Color.paper)
@@ -938,7 +946,6 @@ private struct PagePreviewView: View {
                                 .background(Color.clay)
                                 .clipShape(Circle())
                         }
-                        .buttonStyle(.plain)
                     }
                     .padding(.horizontal, 12)
                     .padding(.top, 8)
@@ -1092,6 +1099,11 @@ private enum InteractionTelemetry {
             UIImpactFeedbackGenerator(style: .light).impactOccurred()
         }
     }
+
+    static func recordAction(componentID: String, disabled: Bool, location: CGPoint? = nil) {
+        logTap(componentID: componentID, disabled: disabled, location: location)
+        feedback(disabled: disabled)
+    }
 }
 
 private struct TrackedEditorToolButton<Label: View>: View {
@@ -1162,7 +1174,7 @@ private struct TapePlacementBar: View {
 
             Spacer()
 
-            Button(action: onCancel) {
+            TrackedEditorToolButton(componentID: "canvas.tape.placement.cancel", disabled: false, action: onCancel) {
                 Image(systemName: "xmark")
                     .font(.system(size: 13, weight: .bold))
                     .foregroundStyle(Color.inkSoft)
@@ -1170,16 +1182,16 @@ private struct TapePlacementBar: View {
                     .background(Color.paper)
                     .clipShape(Circle())
             }
-            .buttonStyle(.plain)
 
-            Button("Done", action: onDone)
-                .font(.system(size: 13, weight: .bold, design: .rounded))
-                .foregroundStyle(Color.paper)
-                .padding(.horizontal, 14)
-                .frame(height: 34)
-                .background(Color.clay)
-                .clipShape(Capsule())
-                .buttonStyle(.plain)
+            TrackedEditorToolButton(componentID: "canvas.tape.placement.done", disabled: false, action: onDone) {
+                Text("Done")
+                    .font(.system(size: 13, weight: .bold, design: .rounded))
+                    .foregroundStyle(Color.paper)
+                    .padding(.horizontal, 14)
+                    .frame(height: 34)
+                    .background(Color.clay)
+                    .clipShape(Capsule())
+            }
         }
         .padding(10)
         .background(Color.paper.opacity(0.96))
@@ -1433,9 +1445,9 @@ private struct CanvasPresentationView: View {
 
                 VStack(spacing: 0) {
                     HStack(spacing: 10) {
-                        Button {
+                        TrackedEditorToolButton(componentID: "presentation.close", disabled: false, action: {
                             dismiss()
-                        } label: {
+                        }) {
                             Image(systemName: "xmark")
                                 .font(.system(size: 18, weight: .bold))
                                 .foregroundStyle(Color.paper)
@@ -1443,7 +1455,6 @@ private struct CanvasPresentationView: View {
                                 .background(Color.black.opacity(0.24))
                                 .clipShape(Circle())
                         }
-                        .buttonStyle(.plain)
 
                         Spacer()
 
@@ -1524,7 +1535,7 @@ private struct CanvasPresentationView: View {
     }
 
     private func presentationButton(_ icon: String, disabled: Bool, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
+        TrackedEditorToolButton(componentID: "presentation.step.\(telemetryIDSegment(icon))", disabled: disabled, action: action) {
             Image(systemName: icon)
                 .font(.system(size: 24, weight: .bold))
                 .foregroundStyle(disabled ? Color.paper.opacity(0.28) : Color.paper)
@@ -1532,8 +1543,6 @@ private struct CanvasPresentationView: View {
                 .background(Color.black.opacity(disabled ? 0.12 : 0.28))
                 .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
         }
-        .buttonStyle(.plain)
-        .disabled(disabled)
     }
 }
 
@@ -4773,7 +4782,7 @@ private enum EditorToolShelf: String, CaseIterable, Identifiable {
     var icon: String {
         switch self {
         case .add: return "plus.circle"
-        case .adjust: return "slider.horizontal.3"
+        case .adjust: return "dial.medium"
         case .arrange: return "square.grid.2x2"
         case .object: return "square.stack.3d.up"
         }
@@ -5176,7 +5185,7 @@ private enum StoreCategory: String, CaseIterable, Identifiable {
         case .text: return "textformat"
         case .stickers: return "sparkles"
         case .brush: return "paintbrush.pointed"
-        case .wordArt: return "textformat.alt"
+        case .wordArt: return "textformat.size"
         case .backgrounds: return "paintpalette"
         case .templates: return "square.grid.2x2"
         }
@@ -5405,7 +5414,7 @@ private struct TextPresetChoiceCard: View {
                         .foregroundStyle(Color.ink)
                         .lineLimit(1)
                     Spacer(minLength: 0)
-                    Image(systemName: preset.kind == .wordArt ? "textformat.alt" : "textformat")
+                    Image(systemName: preset.kind == .wordArt ? "textformat.size" : "textformat")
                         .font(.system(size: 14, weight: .bold))
                         .foregroundStyle(Color.clay)
                 }
@@ -7160,7 +7169,7 @@ private struct EditorToolPanel<PhotoPicker: View>: View {
         toolButton(snapToGrid ? "grid.circle.fill" : "grid.circle", "Snap", active: snapToGrid, action: onToggleSnap)
         toolButton("square.grid.2x2", "Template", action: onTemplate)
         toolButton("paintpalette", "Background", action: onBackground)
-        toolButton("textformat.alt", "WordArt", action: onWordArt)
+        toolButton("textformat.size", "WordArt", action: onWordArt)
         toolButton("wand.and.stars", "ArtStyle", action: onWordArtStyles)
         toolButton("link", "Link", action: onLink)
         toolButton("doc.badge.plus", "File", action: onFile)
@@ -7651,7 +7660,7 @@ private struct LayerRow: View {
         case .tape: return "rectangle.on.rectangle.angled"
         case .brush: return "paintbrush.pointed"
         case .shape: return "square.on.circle"
-        case .wordArt: return "textformat.alt"
+        case .wordArt: return "textformat.size"
         case .link: return "link"
         case .file: return "doc"
         case .connector: return "arrow.right"
@@ -8522,7 +8531,7 @@ private struct NotebookEditSheet: View {
 
                 Spacer()
 
-                Button(action: onCancel) {
+                TrackedEditorToolButton(componentID: "sheet.notebook-edit.cancel", disabled: false, action: onCancel) {
                     Image(systemName: "xmark")
                         .font(.system(size: 16, weight: .bold))
                         .foregroundStyle(Color.ink)
@@ -8530,7 +8539,6 @@ private struct NotebookEditSheet: View {
                         .background(Color.paper)
                         .clipShape(Circle())
                 }
-                .buttonStyle(.plain)
             }
 
             TextField("Notebook name", text: $title)
@@ -8541,20 +8549,19 @@ private struct NotebookEditSheet: View {
                 .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
                 .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Color.lineSoft, lineWidth: 1.2))
 
-            Button {
+            TrackedEditorToolButton(componentID: "sheet.notebook-edit.save", disabled: title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, action: {
                 onRename(title)
-            } label: {
+            }) {
                 Label("Save name", systemImage: "checkmark")
                     .font(.system(size: 16, weight: .bold, design: .rounded))
                     .foregroundStyle(Color.paper)
                     .frame(maxWidth: .infinity)
                     .frame(height: 48)
-                    .background(Color.clay)
+                    .background(title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? Color.inkSoft : Color.clay)
                     .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
             }
-            .buttonStyle(.plain)
 
-            Button(role: .destructive, action: onDelete) {
+            TrackedEditorToolButton(componentID: "sheet.notebook-edit.delete", disabled: !canDelete, action: onDelete) {
                 Label(canDelete ? "Delete notebook" : "Keep at least one notebook", systemImage: "trash")
                     .font(.system(size: 15, weight: .bold, design: .rounded))
                     .foregroundStyle(canDelete ? Color.red : Color.inkSoft)
@@ -8564,8 +8571,6 @@ private struct NotebookEditSheet: View {
                     .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
                     .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Color.lineSoft, lineWidth: 1.2))
             }
-            .buttonStyle(.plain)
-            .disabled(!canDelete)
 
             Spacer(minLength: 0)
         }
@@ -8589,7 +8594,7 @@ private struct NotebookPickerSheet: View {
 
                 Spacer()
 
-                Button(action: onCancel) {
+                TrackedEditorToolButton(componentID: "sheet.notebook-picker.cancel", disabled: false, action: onCancel) {
                     Image(systemName: "xmark")
                         .font(.system(size: 16, weight: .bold))
                         .foregroundStyle(Color.ink)
@@ -8597,15 +8602,14 @@ private struct NotebookPickerSheet: View {
                         .background(Color.paper)
                         .clipShape(Circle())
                 }
-                .buttonStyle(.plain)
             }
 
             ScrollView(showsIndicators: false) {
                 VStack(spacing: 10) {
                     ForEach(repository.notebooks) { notebook in
-                        Button {
+                        TrackedEditorToolButton(componentID: "sheet.notebook-picker.select.\(notebook.id.uuidString.lowercased())", disabled: false, action: {
                             onSelect(notebook.id)
-                        } label: {
+                        }) {
                             HStack(spacing: 12) {
                                 Image(systemName: notebook.symbol)
                                     .font(.system(size: 18, weight: .semibold))
@@ -8636,7 +8640,6 @@ private struct NotebookPickerSheet: View {
                             .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
                             .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(Color.lineSoft, lineWidth: 1.2))
                         }
-                        .buttonStyle(.plain)
                     }
                 }
             }
@@ -8664,7 +8667,7 @@ private struct NewNotebookSheet: View {
             ScrollView(showsIndicators: false) {
                 VStack(spacing: 22) {
                     HStack {
-                        Button(action: onCancel) {
+                        TrackedEditorToolButton(componentID: "sheet.new-notebook.cancel", disabled: false, action: onCancel) {
                             Image(systemName: "xmark")
                                 .font(.system(size: 19, weight: .semibold))
                                 .foregroundStyle(Color.ink)
@@ -8673,7 +8676,6 @@ private struct NewNotebookSheet: View {
                                 .clipShape(Circle())
                                 .overlay(Circle().stroke(Color.lineSoft, lineWidth: 1.2))
                         }
-                        .buttonStyle(.plain)
 
                         Spacer()
 
@@ -8683,9 +8685,9 @@ private struct NewNotebookSheet: View {
 
                         Spacer()
 
-                        Button {
+                        TrackedEditorToolButton(componentID: "sheet.new-notebook.create", disabled: false, action: {
                             onCreate(title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "New Book" : title, themeIndex, coverImageData)
-                        } label: {
+                        }) {
                             Image(systemName: "checkmark")
                                 .font(.system(size: 19, weight: .semibold))
                                 .foregroundStyle(Color.ink)
@@ -8694,7 +8696,6 @@ private struct NewNotebookSheet: View {
                                 .clipShape(Circle())
                                 .overlay(Circle().stroke(Color.lineSoft, lineWidth: 1.2))
                         }
-                        .buttonStyle(.plain)
                     }
                     .padding(.horizontal, 18)
                     .padding(.top, 12)
@@ -8715,10 +8716,11 @@ private struct NewNotebookSheet: View {
                         GroupBox(label: Text("Choose Theme").font(.system(size: 20, weight: .semibold, design: .rounded))) {
                             LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
                                 ForEach(Array(themeNames.enumerated()), id: \.offset) { index, name in
-                                    ThemeChip(title: name, selected: themeIndex == index)
-                                        .onTapGesture {
-                                            themeIndex = index
-                                        }
+                                    TrackedEditorToolButton(componentID: "sheet.new-notebook.theme.\(telemetryIDSegment(name))", disabled: false, action: {
+                                        themeIndex = index
+                                    }) {
+                                        ThemeChip(title: name, selected: themeIndex == index)
+                                    }
                                 }
                             }
                             .padding(.top, 4)
@@ -8748,15 +8750,14 @@ private struct NewNotebookSheet: View {
                                 Spacer()
 
                                 if coverImageData != nil {
-                                    Button {
+                                    TrackedEditorToolButton(componentID: "sheet.new-notebook.cover.clear", disabled: false, action: {
                                         selectedCoverPhoto = nil
                                         coverImageData = nil
-                                    } label: {
+                                    }) {
                                         Image(systemName: "xmark.circle.fill")
                                             .font(.system(size: 22, weight: .semibold))
                                             .foregroundStyle(Color.inkSoft)
                                     }
-                                    .buttonStyle(.plain)
                                 }
                             }
                             .padding(.horizontal, 14)
@@ -8897,7 +8898,7 @@ private struct CoverOptionCard: View {
     let action: () -> Void
 
     var body: some View {
-        Button(action: action) {
+        TrackedEditorToolButton(componentID: "sheet.new-notebook.cover.\(telemetryIDSegment(title))", disabled: false, action: action) {
             VStack(alignment: .leading, spacing: 10) {
                 RoundedRectangle(cornerRadius: 18, style: .continuous)
                     .fill(coverGradient)
@@ -8920,7 +8921,6 @@ private struct CoverOptionCard: View {
                     .foregroundStyle(Color.ink)
             }
         }
-        .buttonStyle(.plain)
     }
 
     private var coverGradient: LinearGradient {
@@ -8997,7 +8997,7 @@ private struct SearchCard: View {
 
     var body: some View {
         VStack(spacing: 12) {
-            Button(action: onTap) {
+            TrackedEditorToolButton(componentID: "home.search.open", disabled: false, action: onTap) {
                 HStack {
                     Image(systemName: "magnifyingglass")
                         .font(.system(size: 15, weight: .semibold))
@@ -9026,12 +9026,11 @@ private struct SearchCard: View {
                 .background(Color.paper)
                 .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
             }
-            .buttonStyle(.plain)
 
             LocationMapPreview(region: mapRegion, placeLabel: placeLabel)
                 .frame(height: 168)
 
-            Button(action: onLocate) {
+            TrackedEditorToolButton(componentID: "home.search.locate", disabled: isSearching, action: onLocate) {
                 HStack(spacing: 8) {
                     if isSearching {
                         ProgressView()
@@ -9050,7 +9049,6 @@ private struct SearchCard: View {
                 .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
                 .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(Color.lineSoft, lineWidth: 1.1))
             }
-            .buttonStyle(.plain)
         }
         .padding(12)
         .background(Color.panel)
@@ -9116,13 +9114,15 @@ private struct PlaceSearchSheet: View {
 
                 Spacer()
 
-                Button("Done", action: onDone)
-                    .font(.system(size: 15, weight: .bold, design: .rounded))
-                    .foregroundStyle(Color.paper)
-                    .padding(.horizontal, 16)
-                    .frame(height: 38)
-                    .background(Color.clay)
-                    .clipShape(Capsule())
+                TrackedEditorToolButton(componentID: "sheet.place-search.done", disabled: false, action: onDone) {
+                    Text("Done")
+                        .font(.system(size: 15, weight: .bold, design: .rounded))
+                        .foregroundStyle(Color.paper)
+                        .padding(.horizontal, 16)
+                        .frame(height: 38)
+                        .background(Color.clay)
+                        .clipShape(Capsule())
+                }
             }
 
             HStack(spacing: 10) {
@@ -9140,14 +9140,13 @@ private struct PlaceSearchSheet: View {
                     ProgressView()
                         .controlSize(.mini)
                 } else if !model.query.isEmpty {
-                    Button {
+                    TrackedEditorToolButton(componentID: "sheet.place-search.clear", disabled: false, action: {
                         model.query = ""
                         model.search()
-                    } label: {
+                    }) {
                         Image(systemName: "xmark.circle.fill")
                             .foregroundStyle(Color.inkSoft)
                     }
-                    .buttonStyle(.plain)
                 }
             }
             .font(.system(size: 16, weight: .semibold, design: .rounded))
@@ -9164,10 +9163,10 @@ private struct PlaceSearchSheet: View {
                 .font(.system(size: 12, weight: .semibold, design: .rounded))
                 .foregroundStyle(Color.inkSoft)
 
-            Button {
+            TrackedEditorToolButton(componentID: "sheet.place-search.current-location", disabled: locationProvider.isLocating, action: {
                 locationProvider.requestLocation()
                 onDone()
-            } label: {
+            }) {
                 HStack(spacing: 12) {
                     ZStack {
                         Circle()
@@ -9202,13 +9201,12 @@ private struct PlaceSearchSheet: View {
                 .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
                 .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Color.lineSoft, lineWidth: 1.1))
             }
-            .buttonStyle(.plain)
 
             if !model.query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                Button {
+                TrackedEditorToolButton(componentID: "sheet.place-search.use-query", disabled: false, action: {
                     locationProvider.applySearchText(model.query)
                     onDone()
-                } label: {
+                }) {
                     HStack(spacing: 12) {
                         Image(systemName: "mappin.circle.fill")
                             .font(.system(size: 18, weight: .bold))
@@ -9229,16 +9227,15 @@ private struct PlaceSearchSheet: View {
                     .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
                     .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Color.clay.opacity(0.28), lineWidth: 1.2))
                 }
-                .buttonStyle(.plain)
             }
 
             ScrollView(showsIndicators: false) {
                 VStack(spacing: 10) {
                     ForEach(Array(model.results.prefix(12).enumerated()), id: \.offset) { _, item in
-                        Button {
+                        TrackedEditorToolButton(componentID: "sheet.place-search.result.\(telemetryIDSegment(item.name ?? "place"))", disabled: false, action: {
                             locationProvider.applySearchResult(item)
                             onDone()
-                        } label: {
+                        }) {
                             HStack(spacing: 12) {
                                 Image(systemName: "mappin.and.ellipse")
                                     .font(.system(size: 18, weight: .bold))
@@ -9266,7 +9263,6 @@ private struct PlaceSearchSheet: View {
                             .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
                             .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Color.lineSoft, lineWidth: 1.1))
                         }
-                        .buttonStyle(.plain)
                     }
                 }
             }
@@ -9326,8 +9322,9 @@ private struct HeaderButton: View {
     let icon: String
 
     var body: some View {
-        Button {
-        } label: {
+        TrackedEditorToolButton(componentID: "home.header.\(telemetryIDSegment(icon))", disabled: false, action: {
+            InteractionTelemetry.recordAction(componentID: "home.header.\(telemetryIDSegment(icon)).placeholder", disabled: true)
+        }) {
             Image(systemName: icon)
                 .font(.system(size: 19, weight: .regular))
                 .foregroundStyle(Color.ink)
@@ -9336,7 +9333,6 @@ private struct HeaderButton: View {
                 .clipShape(Circle())
                 .overlay(Circle().stroke(Color.lineSoft, lineWidth: 1.3))
         }
-        .buttonStyle(.plain)
         .accessibilityLabel(Text(icon))
     }
 }
@@ -9380,7 +9376,7 @@ private struct HomeCreateOption: View {
     let action: () -> Void
 
     var body: some View {
-        Button(action: action) {
+        TrackedEditorToolButton(componentID: "home.create.\(telemetryIDSegment(title))", disabled: false, action: action) {
             VStack(spacing: 10) {
                 Image(systemName: icon)
                     .font(.system(size: 26, weight: .semibold))
@@ -9401,7 +9397,6 @@ private struct HomeCreateOption: View {
             .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(Color.lineSoft, lineWidth: 1.2))
         }
-        .buttonStyle(.plain)
     }
 }
 
@@ -9422,9 +9417,9 @@ private struct NotebookSection: View {
 
                 Spacer()
 
-                Button {
+                TrackedEditorToolButton(componentID: "home.notebook.new", disabled: false, action: {
                     showingNewNotebook = true
-                } label: {
+                }) {
                     Label("New Book", systemImage: "plus")
                         .font(.system(size: 14, weight: .medium, design: .rounded))
                         .foregroundStyle(Color.inkSoft)
@@ -9434,7 +9429,6 @@ private struct NotebookSection: View {
                         .clipShape(Capsule())
                         .overlay(Capsule().stroke(Color.lineSoft, lineWidth: 1.2))
                 }
-                .buttonStyle(.plain)
             }
 
             LazyVGrid(columns: columns, spacing: 16) {
@@ -9591,7 +9585,7 @@ private struct LocationMaterialStickerCard: View {
     let action: () -> Void
 
     var body: some View {
-        Button(action: action) {
+        TrackedEditorToolButton(componentID: "home.location.material.\(telemetryIDSegment(item.id))", disabled: false, action: action) {
             VStack(alignment: .leading, spacing: 7) {
                 ZStack(alignment: .bottomTrailing) {
                     if let image = CanvasImageCache.shared.image(at: item.fileURL) {
@@ -9636,7 +9630,6 @@ private struct LocationMaterialStickerCard: View {
             .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Color.lineSoft, lineWidth: 1.1))
         }
-        .buttonStyle(.plain)
     }
 }
 
@@ -9645,7 +9638,7 @@ private struct LocationSymbolStickerCard: View {
     let action: () -> Void
 
     var body: some View {
-        Button(action: action) {
+        TrackedEditorToolButton(componentID: "home.location.sticker.\(telemetryIDSegment(sticker.id))", disabled: false, action: action) {
             VStack(spacing: 9) {
                 Image(systemName: sticker.symbol)
                     .font(.system(size: 30, weight: .semibold))
@@ -9665,7 +9658,6 @@ private struct LocationSymbolStickerCard: View {
             .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Color.lineSoft, lineWidth: 1.1))
         }
-        .buttonStyle(.plain)
     }
 }
 
@@ -9721,7 +9713,7 @@ private struct NotebookCard: View {
     let action: () -> Void
 
     var body: some View {
-        Button(action: action) {
+        TrackedEditorToolButton(componentID: "home.notebook.open.\(notebook.id.uuidString.lowercased())", disabled: false, action: action) {
             ZStack(alignment: .bottom) {
                 NotebookCover(repository: repository, notebook: notebook, coverPage: coverPage)
 
@@ -9759,7 +9751,6 @@ private struct NotebookCard: View {
             )
             .shadow(color: Color.shadow, radius: 10, x: 0, y: 5)
         }
-        .buttonStyle(.plain)
     }
 }
 
@@ -9850,9 +9841,9 @@ private struct BottomTabBar: View {
 
             HStack(spacing: 8) {
                 ForEach(RootTab.allCases) { tab in
-                    Button {
+                    TrackedEditorToolButton(componentID: "root.tab.\(telemetryIDSegment(tab.title))", disabled: false, action: {
                         selectedTab = tab
-                    } label: {
+                    }) {
                         VStack(spacing: 6) {
                             ZStack {
                                 if selectedTab == tab {
@@ -9878,7 +9869,6 @@ private struct BottomTabBar: View {
                         .frame(maxWidth: .infinity)
                         .frame(height: 58)
                     }
-                    .buttonStyle(.plain)
                 }
             }
             .padding(.horizontal, 28)
