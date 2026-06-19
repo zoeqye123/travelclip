@@ -8,6 +8,8 @@ from typing import Optional
 
 ROOT = Path(__file__).resolve().parents[1]
 CONTENT_VIEW = Path(os.environ.get("TRAVELCLIP_CONTENT_VIEW", ROOT / "travelclip" / "ContentView.swift")).resolve()
+TRAVEL_MODELS = Path(os.environ.get("TRAVELCLIP_TRAVEL_MODELS", ROOT / "travelclip" / "TravelModels.swift")).resolve()
+NOTEBOOK_REPOSITORY = Path(os.environ.get("TRAVELCLIP_NOTEBOOK_REPOSITORY", ROOT / "travelclip" / "NotebookRepository.swift")).resolve()
 
 
 failures: list[str] = []
@@ -74,6 +76,8 @@ def report_and_exit() -> None:
 
 def main() -> None:
     source = CONTENT_VIEW.read_text(encoding="utf-8")
+    models = TRAVEL_MODELS.read_text(encoding="utf-8")
+    repository = NOTEBOOK_REPOSITORY.read_text(encoding="utf-8")
 
     forbid(r"CanvasScrollContainer", source, "CanvasWorkspace must not use the legacy UIScrollView zoom container.")
     forbid(r"FittingScrollView", source, "Legacy fitting scroll view must stay removed from the canvas path.")
@@ -89,6 +93,12 @@ def main() -> None:
     require(r"CanvasWorkspace\([\s\S]*?\)\s*\.frame\(width:\s*proxy\.size\.width,\s*height:\s*proxy\.size\.height\)", source, "CanvasWorkspace must fill the measured editor viewport instead of being reduced by tool panels.")
     require(r"ZStack\(alignment:\s*\.bottom\)[\s\S]*?CanvasWorkspace\([\s\S]*?EditorToolPanel\(", source, "Editor tool panel must overlay the fixed canvas viewport instead of resizing it.")
     forbid(r"let\s+canvasHeight\s*=|proxy\.size\.height\s*-\s*panelHeight", source, "Tool panels must not subtract from the CanvasWorkspace viewport height.")
+    require(r"static\s+let\s+designCanvasSize\s*=\s*CodableSize\(width:\s*1080,\s*height:\s*1920\)", models, "CanvasDocument must define one canonical design coordinate size.")
+    require(r"var\s+canvasSize\s*=\s*CanvasDocument\.designCanvasSize", models, "CanvasDocument canvasSize must default to the canonical design size.")
+    require(r"canvasSize:\s*CodableSize\s*=\s*CanvasDocument\.designCanvasSize", models, "CanvasDocument initializer must default to the canonical design size.")
+    require(r"decodeIfPresent\(CodableSize\.self,\s*forKey:\s*\.canvasSize\)\s*\?\?\s*CanvasDocument\.designCanvasSize", models, "CanvasDocument decoder must preserve compatibility while defaulting missing canvas size to the canonical design size.")
+    require(r"current\.matches\(CanvasDocument\.designCanvasSize\)", repository, "Loaded pages must normalize stored canvas sizes to the canonical design size.")
+    forbid(r"CodableSize\(width:\s*1080,\s*height:\s*1920\)", repository, "Repository code must use CanvasDocument.designCanvasSize instead of duplicating literal canvas dimensions.")
 
     workspace = require_block(r"private struct CanvasWorkspace: View \{(?P<body>.*?)\n\}\n\nprivate struct CanvasSurface", source, "CanvasWorkspace not found.")
     if workspace is not None:

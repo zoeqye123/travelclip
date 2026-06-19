@@ -36,8 +36,10 @@ struct JournalPage: Identifiable, Codable {
 }
 
 struct CanvasDocument: Codable {
+    static let designCanvasSize = CodableSize(width: 1080, height: 1920)
+
     var pageID: UUID
-    var canvasSize = CodableSize(width: 1080, height: 1920)
+    var canvasSize = CanvasDocument.designCanvasSize
     var background = CanvasBackground()
     var elements: [CanvasElement] = []
     var viewportFrames: [CanvasViewportFrame] = []
@@ -45,7 +47,7 @@ struct CanvasDocument: Codable {
 
     init(
         pageID: UUID,
-        canvasSize: CodableSize = CodableSize(width: 1080, height: 1920),
+        canvasSize: CodableSize = CanvasDocument.designCanvasSize,
         background: CanvasBackground = CanvasBackground(),
         elements: [CanvasElement] = [],
         viewportFrames: [CanvasViewportFrame] = [],
@@ -62,7 +64,7 @@ struct CanvasDocument: Codable {
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         pageID = try container.decode(UUID.self, forKey: .pageID)
-        canvasSize = try container.decodeIfPresent(CodableSize.self, forKey: .canvasSize) ?? CodableSize(width: 1080, height: 1920)
+        canvasSize = try container.decodeIfPresent(CodableSize.self, forKey: .canvasSize) ?? CanvasDocument.designCanvasSize
         background = try container.decodeIfPresent(CanvasBackground.self, forKey: .background) ?? CanvasBackground()
         elements = try container.decodeIfPresent([CanvasElement].self, forKey: .elements) ?? []
         viewportFrames = try container.decodeIfPresent([CanvasViewportFrame].self, forKey: .viewportFrames) ?? []

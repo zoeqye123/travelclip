@@ -2406,7 +2406,7 @@ final class NotebookRepository: ObservableObject {
     }
 
     private func elementSizeBounds(on pageID: UUID) -> (minWidth: CGFloat, minHeight: CGFloat, maxWidth: CGFloat, maxHeight: CGFloat) {
-        let canvasSize = page(id: pageID)?.canvasDocument.canvasSize ?? CodableSize(width: 1080, height: 1920)
+        let canvasSize = page(id: pageID)?.canvasDocument.canvasSize ?? CanvasDocument.designCanvasSize
         return (
             minWidth: 42,
             minHeight: 42,
@@ -2559,8 +2559,8 @@ final class NotebookRepository: ObservableObject {
 
         for index in pages.indices {
             let current = pages[index].canvasDocument.canvasSize
-            if current.width <= 0 || current.height <= 0 {
-                pages[index].canvasDocument.canvasSize = CodableSize(width: 1080, height: 1920)
+            if !current.matches(CanvasDocument.designCanvasSize) {
+                pages[index].canvasDocument.canvasSize = CanvasDocument.designCanvasSize
                 changed = true
             }
             if pages[index].canvasDocument.pageID != pages[index].id {

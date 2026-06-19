@@ -126,6 +126,8 @@
 			);
 			inputPaths = (
 				"$(SRCROOT)/travelclip/ContentView.swift",
+				"$(SRCROOT)/travelclip/NotebookRepository.swift",
+				"$(SRCROOT)/travelclip/TravelModels.swift",
 				"$(SRCROOT)/scripts/verify_canvas_contract.py",
 			);
 			name = "Canvas Contract Verification";
