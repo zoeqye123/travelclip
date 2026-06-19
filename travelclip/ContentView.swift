@@ -3461,8 +3461,6 @@ private struct CanvasViewportTransform {
 
     func displayElement(_ element: CanvasElement) -> CanvasElement {
         var copy = element
-        copy.x *= xScale
-        copy.y *= yScale
         copy.width *= xScale
         copy.height *= yScale
         copy.fontSize *= uniformScale

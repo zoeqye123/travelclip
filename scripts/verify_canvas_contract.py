@@ -84,6 +84,7 @@ def main() -> None:
     require(r"func\s+documentPoint\(_\s+point:\s+CGPoint\)", source, "CanvasViewportTransform must map display points back to document points.")
     require(r"viewportTransform\.displayElement\(renderedElement\)", source, "Canvas elements must render through the shared viewport transform.")
     require(r"viewportTransform\.documentPoint\(location\)", source, "Connector endpoint dragging must convert display coordinates through the shared viewport transform.")
+    require(r"\.position\(viewportTransform\.displayPoint\(CGPoint\(x:\s*renderedElement\.x,\s*y:\s*renderedElement\.y\)\)\)", source, "Canvas element centers must be positioned through the shared viewport transform.")
     require(r"transform:\s*CanvasViewportTransform", source, "Canvas capture overlays must receive the shared viewport transform.")
     require(r"CanvasWorkspace\([\s\S]*?\)\s*\.frame\(width:\s*proxy\.size\.width,\s*height:\s*proxy\.size\.height\)", source, "CanvasWorkspace must fill the measured editor viewport instead of being reduced by tool panels.")
     require(r"ZStack\(alignment:\s*\.bottom\)[\s\S]*?CanvasWorkspace\([\s\S]*?EditorToolPanel\(", source, "Editor tool panel must overlay the fixed canvas viewport instead of resizing it.")
@@ -110,6 +111,12 @@ def main() -> None:
     if arrow is not None:
         require(r"DragGesture\(minimumDistance:\s*6,\s*coordinateSpace:\s*\.named\(\"canvasSpace\"\)\)", arrow, "ArrowCaptureOverlay must capture gestures in the shared canvas coordinate space.")
         forbid(r"/\s*scale|\*\s*scale", arrow, "ArrowCaptureOverlay must not directly divide or multiply by a single scale.")
+
+    transform = require_block(r"private struct CanvasViewportTransform \{(?P<body>.*?)\n\}", source, "CanvasViewportTransform not found.")
+    if transform is not None:
+        display_element = require_block(r"func\s+displayElement\(_\s+element:\s+CanvasElement\)\s*->\s*CanvasElement\s*\{(?P<body>.*?)\n    \}", transform, "CanvasViewportTransform.displayElement not found.")
+        if display_element is not None:
+            forbid(r"copy\.x\s*\*=|copy\.y\s*\*=", display_element, "CanvasViewportTransform.displayElement must not scale element centers because parent positioning uses displayPoint.")
 
     require(r"enum\s+InteractionTelemetry", source, "InteractionTelemetry is required for button tap diagnostics.")
     require(r"struct\s+TrackedEditorToolButton", source, "TrackedEditorToolButton is required for editor button feedback and diagnostics.")
