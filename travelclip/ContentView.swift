@@ -1133,6 +1133,12 @@ private enum InteractionTelemetry {
         print("[InteractionTelemetry] component=\(componentID) disabled=\(disabled) \(locationText)")
     }
 
+    static func logCanvasTap(componentID: String, displayLocation: CGPoint, documentLocation: CGPoint) {
+        let displayText = "displayX=\(Int(displayLocation.x.rounded())) displayY=\(Int(displayLocation.y.rounded()))"
+        let documentText = "documentX=\(Int(documentLocation.x.rounded())) documentY=\(Int(documentLocation.y.rounded()))"
+        print("[InteractionTelemetry] component=\(componentID) disabled=false \(displayText) \(documentText)")
+    }
+
     static func feedback(disabled: Bool) {
         if disabled {
             UINotificationFeedbackGenerator().notificationOccurred(.warning)
@@ -2703,7 +2709,8 @@ private struct CanvasWorkspace: View {
             CanvasSurface(background: document.background)
                 .frame(width: displaySize.width, height: displaySize.height)
                 .contentShape(Rectangle())
-                .onTapGesture {
+                .onTapGesture(coordinateSpace: .named("canvasSpace")) { location in
+                    recordCanvasTap(componentID: "canvas.surface.deselect", location: location)
                     onCommit()
                     onSelect(nil, false)
                 }
@@ -2785,7 +2792,8 @@ private struct CanvasWorkspace: View {
                             }
                     )
                 .simultaneousGesture(elementTransformGesture(for: element))
-                    .onTapGesture {
+                    .onTapGesture(coordinateSpace: .named("canvasSpace")) { location in
+                        recordCanvasTap(componentID: "canvas.element.select.\(element.id.uuidString.lowercased())", location: location)
                         onSelect(element.id, true)
                     }
             }
@@ -3035,6 +3043,15 @@ private struct CanvasWorkspace: View {
 
     private func endCanvasInteraction() {
         activeCanvasInteractionCount = max(0, activeCanvasInteractionCount - 1)
+    }
+
+    private func recordCanvasTap(componentID: String, location: CGPoint) {
+        InteractionTelemetry.logCanvasTap(
+            componentID: componentID,
+            displayLocation: location,
+            documentLocation: viewportTransform.documentPoint(location)
+        )
+        InteractionTelemetry.feedback(disabled: false)
     }
 
     private func previewMovedSelectionElements(from startPositions: [UUID: CGPoint], translation: CGSize) -> [UUID: CanvasElement] {
