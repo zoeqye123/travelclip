@@ -5466,36 +5466,6 @@ private enum StoreGrid {
     ]
 }
 
-private struct PlaceholderRootTabView: View {
-    let title: String
-    let icon: String
-    let subtitle: String
-
-    var body: some View {
-        VStack(spacing: 12) {
-            Image(systemName: icon)
-                .font(.system(size: 42, weight: .bold))
-                .foregroundStyle(Color.clay)
-                .frame(width: 86, height: 86)
-                .background(Color.paper)
-                .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
-                .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous).stroke(Color.lineSoft, lineWidth: 1.2))
-
-            Text(title)
-                .font(.system(size: 31, weight: .bold, design: .serif))
-                .foregroundStyle(Color.ink)
-
-            Text(subtitle)
-                .font(.system(size: 14, weight: .medium, design: .rounded))
-                .foregroundStyle(Color.inkSoft)
-                .multilineTextAlignment(.center)
-                .padding(.horizontal, 28)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .padding(.bottom, 96)
-    }
-}
-
 private struct CanvasAssetPickerSheet: View {
     let sheet: CanvasAssetSheet
     @ObservedObject var repository: NotebookRepository
