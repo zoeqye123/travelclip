@@ -103,10 +103,12 @@ def main() -> None:
 
     brush = require_block(r"private struct BrushCaptureOverlay: View \{(?P<body>.*?)\n\}", source, "BrushCaptureOverlay not found.")
     if brush is not None:
+        require(r"DragGesture\(minimumDistance:\s*3,\s*coordinateSpace:\s*\.named\(\"canvasSpace\"\)\)", brush, "BrushCaptureOverlay must capture gestures in the shared canvas coordinate space.")
         forbid(r"/\s*scale|\*\s*scale", brush, "BrushCaptureOverlay must not directly divide or multiply by a single scale.")
 
     arrow = require_block(r"private struct ArrowCaptureOverlay: View \{(?P<body>.*?)\n\}", source, "ArrowCaptureOverlay not found.")
     if arrow is not None:
+        require(r"DragGesture\(minimumDistance:\s*6,\s*coordinateSpace:\s*\.named\(\"canvasSpace\"\)\)", arrow, "ArrowCaptureOverlay must capture gestures in the shared canvas coordinate space.")
         forbid(r"/\s*scale|\*\s*scale", arrow, "ArrowCaptureOverlay must not directly divide or multiply by a single scale.")
 
     require(r"enum\s+InteractionTelemetry", source, "InteractionTelemetry is required for button tap diagnostics.")

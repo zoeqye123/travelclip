@@ -3806,7 +3806,7 @@ private struct ArrowCaptureOverlay: View {
             Color.clear
                 .contentShape(Rectangle())
                 .gesture(
-                    DragGesture(minimumDistance: 6)
+                    DragGesture(minimumDistance: 6, coordinateSpace: .named("canvasSpace"))
                         .onChanged { value in
                             if startPoint == nil {
                                 startPoint = value.startLocation
