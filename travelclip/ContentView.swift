@@ -138,7 +138,21 @@ private struct HomeView: View {
         case .universe:
             PlaceholderRootTabView(title: "Universe", icon: "globe.asia.australia", subtitle: "Travel city packs and community sets will live here.")
         case .my:
-            PlaceholderRootTabView(title: "My", icon: "face.smiling", subtitle: "Your notebooks, saved materials, and exports are on this device.")
+            MyLibraryRootTabView(
+                repository: repository,
+                path: $path,
+                showingNewNotebook: $showingNewNotebook,
+                onCreatePage: {
+                    repository.createPageAndOpen(in: nil, title: "New Page", template: .blank) { pageID in
+                        path.append(.editor(pageID))
+                    }
+                },
+                onTemplatePage: {
+                    repository.createPageAndOpen(in: nil, title: "Template Page", template: .postcard) { pageID in
+                        path.append(.editor(pageID))
+                    }
+                }
+            )
         }
     }
 
@@ -9586,6 +9600,174 @@ private struct HomeCreateOption: View {
             .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(Color.lineSoft, lineWidth: 1.2))
         }
+    }
+}
+
+private struct MyLibraryRootTabView: View {
+    @ObservedObject var repository: NotebookRepository
+    @Binding var path: [TravelRoute]
+    @Binding var showingNewNotebook: Bool
+    let onCreatePage: () -> Void
+    let onTemplatePage: () -> Void
+
+    private let notebookColumns = [
+        GridItem(.flexible(), spacing: 16),
+        GridItem(.flexible(), spacing: 16)
+    ]
+
+    private var recentPages: [JournalPage] {
+        Array(repository.pages.sorted { $0.updatedAt > $1.updatedAt }.prefix(4))
+    }
+
+    private var elementCount: Int {
+        repository.pages.reduce(0) { total, page in
+            total + page.canvasDocument.elements.count
+        }
+    }
+
+    var body: some View {
+        ScrollView(showsIndicators: false) {
+            VStack(alignment: .leading, spacing: 22) {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("My TravelClip")
+                        .font(.system(size: 31, weight: .bold, design: .serif))
+                        .foregroundStyle(Color.ink)
+
+                    Text("Local notebooks, recent pages, and quick creation.")
+                        .font(.system(size: 13, weight: .medium, design: .rounded))
+                        .foregroundStyle(Color.inkSoft)
+                        .lineLimit(2)
+                }
+
+                HStack(spacing: 12) {
+                    libraryMetric(title: "Books", value: "\(repository.notebooks.count)", icon: "book.closed")
+                    libraryMetric(title: "Pages", value: "\(repository.pages.count)", icon: "doc.text.image")
+                    libraryMetric(title: "Items", value: "\(elementCount)", icon: "square.stack.3d.up")
+                }
+
+                CreateBanner(onCreatePage: onCreatePage, onTemplatePage: onTemplatePage)
+
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack {
+                        Text("Recent Pages")
+                            .sectionTitle()
+                        Spacer()
+                    }
+
+                    if recentPages.isEmpty {
+                        Text("Create a page to see recent work here.")
+                            .font(.system(size: 14, weight: .semibold, design: .rounded))
+                            .foregroundStyle(Color.inkSoft)
+                            .padding(14)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .background(Color.paper.opacity(0.8))
+                            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                            .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Color.lineSoft, lineWidth: 1))
+                    } else {
+                        VStack(spacing: 10) {
+                            ForEach(recentPages) { page in
+                                TrackedEditorToolButton(componentID: "my.page.open.\(page.id.uuidString.lowercased())", disabled: false, action: {
+                                    path.append(.preview(page.id))
+                                }) {
+                                    HStack(spacing: 12) {
+                                        CanvasThumbnail(repository: repository, document: page.canvasDocument)
+                                            .frame(width: 54, height: 72)
+                                            .background(Color.paper)
+                                            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                                            .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).stroke(Color.lineSoft, lineWidth: 1))
+
+                                        VStack(alignment: .leading, spacing: 5) {
+                                            Text(page.title)
+                                                .font(.system(size: 15, weight: .semibold, design: .rounded))
+                                                .foregroundStyle(Color.ink)
+                                                .lineLimit(1)
+
+                                            Text(page.updatedAt.formatted(date: .abbreviated, time: .shortened))
+                                                .font(.system(size: 12, weight: .medium, design: .rounded))
+                                                .foregroundStyle(Color.inkSoft)
+                                                .lineLimit(1)
+                                        }
+
+                                        Spacer()
+
+                                        Image(systemName: "chevron.right")
+                                            .font(.system(size: 12, weight: .bold))
+                                            .foregroundStyle(Color.inkSoft)
+                                    }
+                                    .padding(12)
+                                    .background(Color.paper)
+                                    .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                                    .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Color.lineSoft, lineWidth: 1))
+                                }
+                            }
+                        }
+                    }
+                }
+
+                VStack(alignment: .leading, spacing: 14) {
+                    HStack {
+                        Text("Notebooks")
+                            .sectionTitle()
+
+                        Spacer()
+
+                        TrackedEditorToolButton(componentID: "my.notebook.new", disabled: false, action: {
+                            showingNewNotebook = true
+                        }) {
+                            Label("New Book", systemImage: "plus")
+                                .font(.system(size: 14, weight: .medium, design: .rounded))
+                                .foregroundStyle(Color.inkSoft)
+                                .padding(.horizontal, 14)
+                                .frame(height: 34)
+                                .background(Color.paper)
+                                .clipShape(Capsule())
+                                .overlay(Capsule().stroke(Color.lineSoft, lineWidth: 1.2))
+                        }
+                    }
+
+                    LazyVGrid(columns: notebookColumns, spacing: 16) {
+                        ForEach(repository.notebooks) { notebook in
+                            NotebookCard(
+                                repository: repository,
+                                notebook: notebook,
+                                coverPage: repository.coverPage(for: notebook.id),
+                                count: repository.pages(for: notebook.id).count
+                            ) {
+                                path.append(.notebook(notebook.id))
+                            }
+                        }
+                    }
+                }
+            }
+            .padding(.horizontal, 18)
+            .padding(.top, 8)
+            .padding(.bottom, 116)
+        }
+    }
+
+    private func libraryMetric(title: String, value: String, icon: String) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Image(systemName: icon)
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundStyle(Color.clay)
+
+            Text(value)
+                .font(.system(size: 22, weight: .bold, design: .rounded))
+                .foregroundStyle(Color.ink)
+                .lineLimit(1)
+                .minimumScaleFactor(0.72)
+
+            Text(title)
+                .font(.system(size: 11, weight: .semibold, design: .rounded))
+                .foregroundStyle(Color.inkSoft)
+                .lineLimit(1)
+                .minimumScaleFactor(0.72)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(12)
+        .background(Color.paper)
+        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Color.lineSoft, lineWidth: 1))
     }
 }
 
