@@ -57,6 +57,17 @@ def require_native_disabled_usage_is_safe(source: str) -> None:
         fail(f"Native .disabled at {CONTENT_VIEW}:{index + 1} must not be used for app commands because disabled taps need telemetry feedback.")
 
 
+def require_no_noop_tracked_actions(source: str) -> None:
+    lines = source.splitlines()
+    for index, line in enumerate(lines):
+        if "TrackedEditorToolButton" not in line or "action: {}" not in line:
+            continue
+
+        if 'disabled: true' in line:
+            continue
+        fail(f"TrackedEditorToolButton at {CONTENT_VIEW}:{index + 1} must not have an empty action unless it is explicitly disabled.")
+
+
 def require_block(pattern: str, source: str, message: str) -> Optional[str]:
     match = re.search(pattern, source, re.DOTALL)
     if not match:
@@ -152,6 +163,8 @@ def main() -> None:
     require(r"InteractionTelemetry\.recordAction", source, "Non-wrapper actions such as menu rows must record telemetry and feedback.")
     require_direct_buttons_are_menu_tracked(source)
     require_native_disabled_usage_is_safe(source)
+    require_no_noop_tracked_actions(source)
+    forbid(r"toolButton\([^)]*disabled:\s*true", source, "Editor tool rows must not include hard-coded disabled tool buttons; hide unavailable permanent controls or use state-driven disabled conditions.")
     require(r"componentID:\s*\"editor\.tool\.", source, "Editor tool buttons must have stable telemetry component IDs.")
     require(r"componentID:\s*\"editor\.align\.", source, "Editor alignment buttons must have stable telemetry component IDs.")
     require(r"componentID:\s*\"editor\.top\.", source, "Editor top bar buttons must have stable telemetry component IDs.")

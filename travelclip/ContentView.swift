@@ -7138,10 +7138,6 @@ private struct EditorToolPanel<PhotoPicker: View>: View {
                 onCornerUp: onCornerUp
             )
         }
-        if !canTuneShapeStyle {
-            toolButton("lineweight", "Thin", disabled: true, action: onLineWidthDown)
-            toolButton("lineweight", "Thick", disabled: true, action: onLineWidthUp)
-        }
         effectButton("minus.circle", "Opacity-", action: onOpacityDown)
         effectButton("plus.circle", "Opacity+", action: onOpacityUp)
         effectButton("rectangle.compress.vertical", "Corner-", action: onCornerDown)
