@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 import re
 import sys
+import os
 from pathlib import Path
 from typing import Optional
 
 
 ROOT = Path(__file__).resolve().parents[1]
-CONTENT_VIEW = ROOT / "travelclip" / "ContentView.swift"
+CONTENT_VIEW = Path(os.environ.get("TRAVELCLIP_CONTENT_VIEW", ROOT / "travelclip" / "ContentView.swift")).resolve()
 
 
 failures: list[str] = []
@@ -37,7 +38,21 @@ def require_direct_buttons_are_menu_tracked(source: str) -> None:
         context = "\n".join(lines[window_start:window_end])
         if "Menu {" in context and "InteractionTelemetry.recordAction" in context:
             continue
-        fail(f"Direct SwiftUI Button at ContentView.swift:{index + 1} must use TrackedEditorToolButton or recordAction inside a Menu row.")
+        fail(f"Direct SwiftUI Button at {CONTENT_VIEW}:{index + 1} must use TrackedEditorToolButton or recordAction inside a Menu row.")
+
+
+def require_native_disabled_usage_is_safe(source: str) -> None:
+    lines = source.splitlines()
+    for index, line in enumerate(lines):
+        if ".disabled(" not in line:
+            continue
+
+        window_start = max(0, index - 8)
+        window_end = min(len(lines), index + 3)
+        context = "\n".join(lines[window_start:window_end])
+        if "VideoPlayer(" in context:
+            continue
+        fail(f"Native .disabled at {CONTENT_VIEW}:{index + 1} must not be used for app commands because disabled taps need telemetry feedback.")
 
 
 def require_block(pattern: str, source: str, message: str) -> Optional[str]:
@@ -97,6 +112,7 @@ def main() -> None:
     require(r"InteractionTelemetry\.feedback", source, "Tracked editor buttons must provide user feedback for taps.")
     require(r"InteractionTelemetry\.recordAction", source, "Non-wrapper actions such as menu rows must record telemetry and feedback.")
     require_direct_buttons_are_menu_tracked(source)
+    require_native_disabled_usage_is_safe(source)
     require(r"componentID:\s*\"editor\.tool\.", source, "Editor tool buttons must have stable telemetry component IDs.")
     require(r"componentID:\s*\"editor\.align\.", source, "Editor alignment buttons must have stable telemetry component IDs.")
     require(r"componentID:\s*\"editor\.top\.", source, "Editor top bar buttons must have stable telemetry component IDs.")

@@ -487,31 +487,30 @@ private struct NotebookDetailView: View {
                                 .overlay(Circle().stroke(Color.lineSoft, lineWidth: 1.3))
                         }
 
-                        Menu {
-                            Button {
-                                InteractionTelemetry.recordAction(componentID: "notebook.detail.export.pdf", disabled: false)
-                                exportNotebookPDF()
-                            } label: {
-                                Label("PDF", systemImage: "doc.richtext")
+                        if pages.isEmpty {
+                            TrackedEditorToolButton(componentID: "notebook.detail.export.empty", disabled: true, action: {}) {
+                                notebookExportIcon(disabled: true)
                             }
+                        } else {
+                            Menu {
+                                Button {
+                                    InteractionTelemetry.recordAction(componentID: "notebook.detail.export.pdf", disabled: false)
+                                    exportNotebookPDF()
+                                } label: {
+                                    Label("PDF", systemImage: "doc.richtext")
+                                }
 
-                            Button {
-                                InteractionTelemetry.recordAction(componentID: "notebook.detail.export.zip", disabled: false)
-                                exportNotebookZIP()
+                                Button {
+                                    InteractionTelemetry.recordAction(componentID: "notebook.detail.export.zip", disabled: false)
+                                    exportNotebookZIP()
+                                } label: {
+                                    Label("ZIP Archive", systemImage: "doc.zipper")
+                                }
                             } label: {
-                                Label("ZIP Archive", systemImage: "doc.zipper")
+                                notebookExportIcon(disabled: false)
                             }
-                        } label: {
-                            Image(systemName: "square.and.arrow.up")
-                                .font(.system(size: 17, weight: .semibold))
-                                .foregroundStyle(pages.isEmpty ? Color.inkSoft.opacity(0.42) : Color.ink)
-                                .frame(width: 42, height: 42)
-                                .background(Color.paper)
-                                .clipShape(Circle())
-                                .overlay(Circle().stroke(Color.lineSoft, lineWidth: 1.3))
+                            .buttonStyle(.plain)
                         }
-                        .buttonStyle(.plain)
-                        .disabled(pages.isEmpty)
 
                         TrackedEditorToolButton(componentID: "notebook.detail.new-page", disabled: false, action: {
                             pageCreateContext = PageCreateContext(notebookID: notebookID)
@@ -626,6 +625,16 @@ private struct NotebookDetailView: View {
               let zipURL = makeNotebookZIP(notebook: notebook, pages: pages) else { return }
         exportItem = ShareableExport(item: zipURL)
         showingShare = true
+    }
+
+    private func notebookExportIcon(disabled: Bool) -> some View {
+        Image(systemName: "square.and.arrow.up")
+            .font(.system(size: 17, weight: .semibold))
+            .foregroundStyle(disabled ? Color.inkSoft.opacity(0.42) : Color.ink)
+            .frame(width: 42, height: 42)
+            .background(Color.paper)
+            .clipShape(Circle())
+            .overlay(Circle().stroke(Color.lineSoft, lineWidth: 1.3))
     }
 
     private func makeNotebookPDF(notebook: TravelNotebook, pages: [JournalPage]) -> URL? {
