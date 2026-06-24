@@ -36,6 +36,12 @@
 - If no physical iPhone is available, still run a simulator build and report that device installation was skipped.
 - Do not block final delivery on installation if signing, pairing, or device availability fails; report the exact failure and the build result.
 
+## Commit Policy
+
+- After completing each requested change, create a focused git commit for the completed work.
+- Do not include unrelated worktree changes in that commit.
+- If existing uncommitted changes are required for the completed work to compile, include only the required files and call that out in the summary.
+
 ## Good Codex Prompts For This Repo
 
 Use this shape for implementation tasks:
