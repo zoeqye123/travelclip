@@ -2,6 +2,7 @@
 import re
 import sys
 import os
+import math
 from pathlib import Path
 from typing import Optional
 
@@ -10,6 +11,10 @@ ROOT = Path(__file__).resolve().parents[1]
 CONTENT_VIEW = Path(os.environ.get("TRAVELCLIP_CONTENT_VIEW", ROOT / "travelclip" / "ContentView.swift")).resolve()
 TRAVEL_MODELS = Path(os.environ.get("TRAVELCLIP_TRAVEL_MODELS", ROOT / "travelclip" / "TravelModels.swift")).resolve()
 NOTEBOOK_REPOSITORY = Path(os.environ.get("TRAVELCLIP_NOTEBOOK_REPOSITORY", ROOT / "travelclip" / "NotebookRepository.swift")).resolve()
+PAGE_TEMPLATES = Path(os.environ.get("TRAVELCLIP_PAGE_TEMPLATES", ROOT / "travelclip" / "PageTemplates.swift")).resolve()
+PAGE_TEMPLATE_APPLIER = Path(os.environ.get("TRAVELCLIP_PAGE_TEMPLATE_APPLIER", ROOT / "travelclip" / "PageTemplateApplier.swift")).resolve()
+MATERIAL_GROUPS = Path(os.environ.get("TRAVELCLIP_MATERIAL_GROUPS", ROOT / "travelclip" / "Resources" / "MaterialGroups")).resolve()
+MATERIAL_MANIFEST = Path(os.environ.get("TRAVELCLIP_MATERIAL_MANIFEST", MATERIAL_GROUPS / "material-manifest.txt")).resolve()
 
 
 failures: list[str] = []
@@ -70,9 +75,322 @@ def require_no_noop_tracked_actions(source: str) -> None:
 
 def require_native_photo_pickers_are_tracked(source: str) -> None:
     picker_count = len(re.findall(r"\bPhotosPicker\s*\(", source))
-    telemetry_count = len(re.findall(r"recordAction\(componentID:\s*\"(?:editor\.tool\.picture\.picker|sheet\.new-notebook\.cover\.picker)\"", source))
+    telemetry_count = len(re.findall(r"recordAction\(componentID:\s*\"(?:editor\.tool\.picture\.picker|sheet\.new-notebook\.cover\.picker|sheet\.quick-clip\.photo)\"", source))
     if picker_count != telemetry_count:
         fail("Every native PhotosPicker path must record telemetry with a stable component ID when a selection is made.")
+
+
+def split_template_blocks(page_templates: str) -> list[tuple[str, str]]:
+    marker = "PageTemplateDefinition("
+    blocks: list[tuple[str, str]] = []
+    search_start = 0
+    while True:
+        start = page_templates.find(marker, search_start)
+        if start == -1:
+            break
+
+        depth = 0
+        end = start
+        for index in range(start, len(page_templates)):
+            char = page_templates[index]
+            if char == "(":
+                depth += 1
+            elif char == ")":
+                depth -= 1
+                if depth == 0:
+                    end = index + 1
+                    break
+        block = page_templates[start:end]
+        id_match = re.search(r'id:\s*"([^"]+)"', block)
+        blocks.append((id_match.group(1) if id_match else f"template@{start}", block))
+        search_start = end
+    return blocks
+
+
+def canvas_element_blocks(template_block: str) -> list[str]:
+    marker = "CanvasElement("
+    blocks: list[str] = []
+    search_start = 0
+    while True:
+        start = template_block.find(marker, search_start)
+        if start == -1:
+            break
+        depth = 0
+        end = start
+        for index in range(start, len(template_block)):
+            char = template_block[index]
+            if char == "(":
+                depth += 1
+            elif char == ")":
+                depth -= 1
+                if depth == 0:
+                    end = index + 1
+                    break
+        blocks.append(template_block[start:end])
+        search_start = end
+    return blocks
+
+
+def argument_string(block: str, name: str) -> Optional[str]:
+    match = re.search(rf'{name}:\s*"([^"]*)"', block, re.DOTALL)
+    return match.group(1) if match else None
+
+
+def argument_number(block: str, name: str) -> Optional[float]:
+    match = re.search(rf'{name}:\s*(-?\d+(?:\.\d+)?)', block)
+    return float(match.group(1)) if match else None
+
+
+def is_text_element(block: str) -> bool:
+    return "kind: .text" in block or "kind: .wordArt" in block
+
+
+def line_count(text: str) -> int:
+    return max(text.count(r"\n") + 1, 1)
+
+
+def element_bounds(block: str) -> tuple[float, float, float, float]:
+    x = argument_number(block, "x") or 0
+    y = argument_number(block, "y") or 0
+    width = argument_number(block, "width") or 0
+    height = argument_number(block, "height") or 0
+    rotation = abs(argument_number(block, "rotation") or 0) * math.pi / 180
+    bounds_width = abs(width * math.cos(rotation)) + abs(height * math.sin(rotation))
+    bounds_height = abs(width * math.sin(rotation)) + abs(height * math.cos(rotation))
+    padding = 8
+    return (
+        x - bounds_width / 2 - padding,
+        y - bounds_height / 2 - padding,
+        x + bounds_width / 2 + padding,
+        y + bounds_height / 2 + padding
+    )
+
+
+def overlap_ratio(a: tuple[float, float, float, float], b: tuple[float, float, float, float]) -> float:
+    width = max(0, min(a[2], b[2]) - max(a[0], b[0]))
+    height = max(0, min(a[3], b[3]) - max(a[1], b[1]))
+    intersection = width * height
+    if intersection <= 0:
+        return 0
+
+    area_a = max(0, a[2] - a[0]) * max(0, a[3] - a[1])
+    area_b = max(0, b[2] - b[0]) * max(0, b[3] - b[1])
+    return intersection / max(min(area_a, area_b), 1)
+
+
+def relative_luminance(hex_color: str) -> float:
+    value = hex_color.strip("#")
+    if len(value) != 6:
+        return 1
+
+    channels = [int(value[index:index + 2], 16) / 255 for index in (0, 2, 4)]
+
+    def linearize(channel: float) -> float:
+        return channel / 12.92 if channel <= 0.03928 else ((channel + 0.055) / 1.055) ** 2.4
+
+    red, green, blue = [linearize(channel) for channel in channels]
+    return red * 0.2126 + green * 0.7152 + blue * 0.0722
+
+
+def contrast_ratio(foreground: str, background: str) -> float:
+    lighter, darker = sorted([relative_luminance(foreground), relative_luminance(background)], reverse=True)
+    return (lighter + 0.05) / (darker + 0.05)
+
+
+def is_body_text_element(block: str) -> bool:
+    if "kind: .wordArt" in block:
+        return False
+    text = argument_string(block, "text") or ""
+    return "\\n" in text or "/" in text or "____" in text or "01" in text or len(text) > 18
+
+
+def template_tag_text(block: str) -> str:
+    match = re.search(r"tags:\s*\[([^\]]*)\]", block, re.DOTALL)
+    if not match:
+        return ""
+    return " ".join(re.findall(r'"([^"]+)"', match.group(1))).lower()
+
+
+def asset_tokens(path: str) -> set[str]:
+    normalized = path.lower()
+    normalized = re.sub(r"[^0-9a-z\u4e00-\u9fff]+", " ", normalized)
+    return {token for token in normalized.split() if len(token) >= 2}
+
+
+def semantic_asset_matches_template(local_path: str, template_tags: str, template_block: str) -> bool:
+    if "country-global" in local_path:
+        return True
+
+    tokens = asset_tokens(local_path)
+    template_text = template_tags + " " + template_block.lower()
+    return any(token in template_text for token in tokens if token not in {"country", "city", "cat", "lat", "lng", "name", "tags", "sticker", "png"})
+
+
+def count_templates_matching(template_blocks: list[tuple[str, str]], *tokens: str) -> int:
+    normalized_tokens = [token.lower() for token in tokens]
+    count = 0
+    for _, block in template_blocks:
+        tag_text = template_tag_text(block)
+        if any(token in tag_text for token in normalized_tokens):
+            count += 1
+    return count
+
+
+def verify_page_template_quality(page_templates: str, applier: str, content: str) -> None:
+    if not PAGE_TEMPLATES.exists():
+        fail("PageTemplates.swift is required for built-in template quality verification.")
+        return
+
+    template_blocks = split_template_blocks(page_templates)
+    if len(template_blocks) < 10:
+        fail("Built-in page templates must include a meaningful commercial starter library, not only a placeholder set.")
+
+    if MATERIAL_MANIFEST.exists():
+        available_assets = {
+            line.strip()
+            for line in MATERIAL_MANIFEST.read_text(encoding="utf-8").splitlines()
+            if line.strip() and not line.strip().startswith("#")
+        }
+    else:
+        available_assets = {path.name for path in MATERIAL_GROUPS.rglob("*") if path.is_file()} if MATERIAL_GROUPS.exists() else set()
+    if not available_assets:
+        fail("Template material assets were not found under Resources/MaterialGroups.")
+
+    if count_templates_matching(template_blocks, "before-travel", "plan") < 2:
+        fail("Template library must include at least two before-travel planning templates.")
+    if count_templates_matching(template_blocks, "during-travel", "route-flow", "city-walk") < 4:
+        fail("Template library must include a strong set of during-travel route templates.")
+    if count_templates_matching(template_blocks, "after-travel", "memory", "keepsake", "share-card") < 2:
+        fail("Template library must include at least two after-travel memory or sharing templates.")
+    if count_templates_matching(template_blocks, "city-log", "city-card", "city-walk") < 4:
+        fail("Template library must include enough city-specific templates to feel commercial.")
+    required_workflows = {
+        "packing-check": "a pre-trip packing/checklist template",
+        "day-one-route": "a Day 1 route template",
+        "city-walk": "a city walk template",
+        "restaurant-log": "a restaurant or food log template",
+        "trip-recap": "an after-trip recap template",
+    }
+    for tag, description in required_workflows.items():
+        if count_templates_matching(template_blocks, tag) < 1:
+            fail(f"Template library must include {description}.")
+
+    for template_id, block in template_blocks:
+        element_blocks = canvas_element_blocks(block)
+        text_blocks = [element for element in element_blocks if is_text_element(element)]
+        body_text_blocks = [element for element in text_blocks if is_body_text_element(element)]
+        if len(text_blocks) < 5:
+            fail(f"Template '{template_id}' must contain enough editable text structure to feel like a usable travel layout.")
+
+        workflow_text = " ".join(argument_string(element, "text") or "" for element in text_blocks).lower()
+        template_tags = template_tag_text(block)
+        if not re.search(r"(?:\b01\b|stop\s*01|route|flow|步骤|路线|行程)", workflow_text):
+            fail(f"Template '{template_id}' needs a visible travel flow marker such as 01/02/03, stop 01, route, or 路线.")
+        if not re.search(r"\b(before-travel|during-travel|after-travel)\b", template_tags):
+            fail(f"Template '{template_id}' must declare when it is used: before-travel, during-travel, or after-travel.")
+        if not re.search(r"\b(plan|route-flow|memory|city-log|city-card|city-walk|food-memory|fieldbook|ticket-log|share-card)\b", template_tags):
+            fail(f"Template '{template_id}' must declare a commercial use-case tag such as plan, route-flow, memory, city-log, or city-card.")
+
+        image_blocks = [element for element in element_blocks if "kind: .image" in element]
+        placeholder_count = len([element for element in image_blocks if "localPath:" not in element])
+        local_material_count = len([element for element in image_blocks if "localPath:" in element])
+        semantic_material_count = len([
+            element
+            for element in image_blocks
+            if (local_path := argument_string(element, "localPath")) and semantic_asset_matches_template(local_path, template_tags, block)
+        ])
+        if placeholder_count < 2:
+            fail(f"Template '{template_id}' should provide at least two replaceable image areas for a shareable travel page.")
+        if local_material_count < 1:
+            fail(f"Template '{template_id}' should include at least one intentional bundled travel material instead of only generic symbols.")
+        if semantic_material_count < 1:
+            fail(f"Template '{template_id}' must use at least one bundled material that matches the city or travel task.")
+
+        commercial_score = 0
+        commercial_score += min(len(text_blocks), 8)
+        commercial_score += min(placeholder_count, 3) * 2
+        commercial_score += min(local_material_count, 3)
+        commercial_score += 2 if re.search(r"\b(before-travel|during-travel|after-travel)\b", template_tags) else 0
+        commercial_score += 2 if re.search(r"\b(packing-check|day-one-route|restaurant-log|trip-recap|route-flow|city-walk|share-card)\b", template_tags) else 0
+        commercial_score += 2 if semantic_material_count >= 1 else 0
+        if commercial_score < 17:
+            fail(f"Template '{template_id}' commercial quality score is too low ({commercial_score}); add stronger structure, photo frames, or semantic materials.")
+
+        for element in element_blocks:
+            local_path = argument_string(element, "localPath")
+            if local_path and local_path not in available_assets:
+                fail(f"Template '{template_id}' references missing material asset: {local_path}")
+
+            if not is_text_element(element):
+                continue
+
+            text = argument_string(element, "text") or ""
+            width = argument_number(element, "width") or 0
+            height = argument_number(element, "height") or 0
+            font_size = argument_number(element, "fontSize") or 72
+            lines = line_count(text)
+            estimated_min_height = font_size * (1.18 if "kind: .wordArt" in element else 1.24) * lines + max(14, font_size * 0.25)
+
+            if width < 120:
+                fail(f"Template '{template_id}' has an overly narrow text box that is likely to clip: {text[:32]}")
+            if height < estimated_min_height * 0.72:
+                fail(f"Template '{template_id}' text box is too short for its font and line count: {text[:48]}")
+            if "kind: .wordArt" in element and font_size > 84:
+                fail(f"Template '{template_id}' wordArt font size must stay at or below 84 for mobile readability: {text[:32]}")
+            if "kind: .wordArt" in element and height < font_size * 1.35:
+                fail(f"Template '{template_id}' wordArt height must leave room for descenders and rotation: {text[:32]}")
+
+            background_hex = argument_string(element, "backgroundHex")
+            if is_body_text_element(element) and background_hex is None:
+                fail(f"Template '{template_id}' body text must have a background for reliable readability: {text[:48]}")
+            if background_hex is not None:
+                ratio = contrast_ratio(argument_string(element, "colorHex") or "#000000", background_hex)
+                threshold = 3.0 if font_size >= 30 or "kind: .wordArt" in element else 4.5
+                if ratio < threshold:
+                    fail(f"Template '{template_id}' text contrast is too low ({ratio:.2f}) for: {text[:48]}")
+
+        for first_index, first in enumerate(body_text_blocks):
+            first_bounds = element_bounds(first)
+            for second in body_text_blocks[first_index + 1:]:
+                ratio = overlap_ratio(first_bounds, element_bounds(second))
+                if ratio > 0.16:
+                    first_text = (argument_string(first, "text") or "")[:32]
+                    second_text = (argument_string(second, "text") or "")[:32]
+                    fail(f"Template '{template_id}' has overlapping body text blocks: {first_text} <> {second_text}")
+
+    require(r"static\s+func\s+polishedElements\(for\s+template:\s+PageTemplateDefinition\)\s*->\s*\[CanvasElement\]", applier, "Templates must pass through a reusable quality polish step before preview and application.")
+    require(r"copy\.height\s*=\s*minimumHeight", applier, "Template polish must expand text frames that are too short.")
+    require(r"copy\.fontSize\s*=\s*min\(copy\.fontSize,\s*84\)", applier, "Template polish must cap oversized wordArt.")
+    require(r"readabilityAdjustedFontSize\(for:\s*copy,\s*text:\s*text,\s*lineCount:\s*lines\)", applier, "Template polish must shrink long text before it can clip or overlap.")
+    require(r"relativeLuminance\(background\.colorA\).*relativeLuminance\(background\.colorB\)", applier, "Template wordArt shadow color must account for background brightness.")
+    require(r"luminance\s*<\s*0\.34\s*\?\s*\"#111820\"\s*:\s*\"#FFF8EA\"", applier, "Template wordArt must use a dark shadow on dark backgrounds and a light paper shadow on light backgrounds.")
+    require(r"first\(where:\s*\\\.isTemplateStarterElement\)", applier, "Applying a template must select the first replaceable photo area so users know where to start.")
+    require(r"copy\.editHint\s*=\s*\"Tap to replace photo\"", applier, "Template photo placeholders must carry an explicit replacement hint.")
+    require(r"PageTemplateApplier\.polishedElements\(for:\s*template\)", content, "Template preview must use the same polished elements as applied templates.")
+    require(r"showStarterHintIfNeeded", content, "Editor must show a starter hint after applying or opening a template with a selected photo placeholder.")
+    require(r"Template applied\. Start by replacing the selected photo\.", content, "Applying a template inside the editor must tell users the next editing step.")
+    require(r"CanvasPreviewContent[\s\S]*CanvasElementView\(element:\s*previewTransform\.displayElement\(element\)", content, "Template previews must render with the same CanvasElementView path as the editor.")
+    require(r"let\s+onEditElement:\s*\(UUID\)\s*->\s*Void", content, "CanvasWorkspace must expose direct element editing for double-tapped template text.")
+    require(r"\.onTapGesture\(count:\s*2,\s*coordinateSpace:\s*\.named\(\"canvasSpace\"\)\)", content, "Canvas text elements must support double-tap editing.")
+    require(r"if\s+element\.isTextElement\s*&&\s*!element\.locked[\s\S]*onEditElement\(element\.id\)", content, "Double-tap editing must only open editable text or wordArt elements.")
+    require(r"case\s+plan", content, "Template Center must expose a planning category for before-travel templates.")
+    require(r"case\s+route", content, "Template Center must expose a route category for travel flow templates.")
+    require(r"case\s+memory", content, "Template Center must expose a memory category for after-travel templates.")
+    require(r"travelMomentLabel", content, "Template cards must show the travel moment so users understand when to use a template.")
+    require(r"templateUseCaseLabel", content, "Template cards must show a concrete use-case label instead of only a decorative title.")
+    require(r"templateOutcomeLabel", content, "Template cards must explain the user outcome instead of only showing decorative metadata.")
+    require(r"Text\(template\.templateOutcomeLabel\)", content, "Template cards must render the outcome label so users can judge why to use a template.")
+    require(r"workflowLabel", content, "Template cards must expose a workflow label such as Day 1 Route or Restaurant Log.")
+    require(r"Text\(template\.workflowLabel\)", content, "Template cards must render the workflow label for task-oriented browsing.")
+    require(r"Text\(template\.marketMetadata\)", content, "Template cards must keep photo frame and location metadata visible.")
+    require(r"Tap to replace photo", content, "Image placeholders must show a clear in-canvas replacement instruction.")
+    styled_text = require_block(r"private struct StyledCanvasTextElement: View \{(?P<body>.*?)\n\}\n\nprivate struct CanvasViewportTransform", content, "StyledCanvasTextElement not found.")
+    if styled_text is not None:
+        forbid(r"LinearGradient", styled_text, "Canvas wordArt must not use gradient text because low-contrast fades are unreadable in templates.")
+
+    text_preset_card = require_block(r"private struct TextPresetChoiceCard: View \{(?P<body>.*?)\n\}\n\nprivate struct BrushPresetPanel", content, "TextPresetChoiceCard not found.")
+    if text_preset_card is not None:
+        forbid(r"LinearGradient", text_preset_card, "Text preset previews must not use low-contrast gradients for wordArt.")
 
 
 def require_block(pattern: str, source: str, message: str) -> Optional[str]:
@@ -96,6 +414,8 @@ def main() -> None:
     source = CONTENT_VIEW.read_text(encoding="utf-8")
     models = TRAVEL_MODELS.read_text(encoding="utf-8")
     repository = NOTEBOOK_REPOSITORY.read_text(encoding="utf-8")
+    page_templates = PAGE_TEMPLATES.read_text(encoding="utf-8") if PAGE_TEMPLATES.exists() else ""
+    page_template_applier = PAGE_TEMPLATE_APPLIER.read_text(encoding="utf-8") if PAGE_TEMPLATE_APPLIER.exists() else ""
 
     forbid(r"CanvasScrollContainer", source, "CanvasWorkspace must not use the legacy UIScrollView zoom container.")
     forbid(r"FittingScrollView", source, "Legacy fitting scroll view must stay removed from the canvas path.")
@@ -163,13 +483,20 @@ def main() -> None:
         require(r"\.position\(renderTransform\.displayPoint\(CGPoint\(x:\s*element\.x,\s*y:\s*element\.y\)\)\)", document_renderer, "CanvasDocumentRenderer element centers must use displayPoint.")
         forbid(r"displayScaled\(by:\s*scale\)|element\.x\s*\*\s*scale|element\.y\s*\*\s*scale", document_renderer, "CanvasDocumentRenderer must not use legacy scalar element rendering.")
 
+    preview_content = require_block(r"private struct CanvasPreviewContent: View \{(?P<body>.*?)\n\}\n\nprivate struct HeaderView", source, "CanvasPreviewContent not found.")
+    if preview_content is not None:
+        require(r"previewTransform:\s*CanvasViewportTransform", preview_content, "CanvasPreviewContent must render through CanvasViewportTransform.")
+        require(r"CanvasViewportTransform\(documentSize:\s*documentSize,\s*viewportSize:\s*viewportSize\)", preview_content, "CanvasPreviewContent must map document coordinates into its preview size.")
+        require(r"previewTransform\.displayElement\(element\)", preview_content, "CanvasPreviewContent elements must use displayElement.")
+        require(r"\.position\(previewTransform\.displayPoint\(CGPoint\(x:\s*element\.x,\s*y:\s*element\.y\)\)\)", preview_content, "CanvasPreviewContent element centers must use displayPoint.")
+        forbid(r"displayScaled\(by:\s*scale\)|element\.x\s*\*\s*scale|element\.y\s*\*\s*scale", preview_content, "CanvasPreviewContent must not use legacy scalar rendering.")
+
     template_preview = require_block(r"private struct CanvasTemplatePreview: View \{(?P<body>.*?)\n\}\n\nprivate struct StickerChoiceCard", source, "CanvasTemplatePreview not found.")
     if template_preview is not None:
         require(r"CanvasDocument\.designCanvasSize", template_preview, "Template previews must derive their aspect ratio from the canonical design canvas size.")
-        require(r"previewTransform:\s*CanvasViewportTransform", template_preview, "Template previews must render through CanvasViewportTransform.")
-        require(r"CanvasViewportTransform\(documentSize:\s*CanvasDocument\.designCanvasSize\.cgSize,\s*viewportSize:\s*previewSize\)", template_preview, "Template previews must map design coordinates into the preview size.")
-        require(r"previewTransform\.displayElement\(element\)", template_preview, "Template preview elements must use displayElement.")
-        require(r"\.position\(previewTransform\.displayPoint\(CGPoint\(x:\s*element\.x,\s*y:\s*element\.y\)\)\)", template_preview, "Template preview element centers must use displayPoint.")
+        require(r"CanvasPreviewContent\(", template_preview, "Template previews must render through the shared canvas preview content.")
+        require(r"documentSize:\s*CanvasDocument\.designCanvasSize\.cgSize", template_preview, "Template previews must map design coordinates into the preview size.")
+        require(r"viewportSize:\s*previewSize", template_preview, "Template previews must pass the measured preview size to shared preview content.")
         forbid(r"\b1080\b|\b1920\b|displayScaled\(by:\s*scale\)|element\.x\s*\*\s*scale|element\.y\s*\*\s*scale", template_preview, "Template previews must not duplicate design dimensions or use legacy scalar rendering.")
 
     require(r"enum\s+InteractionTelemetry", source, "InteractionTelemetry is required for button tap diagnostics.")
@@ -291,6 +618,7 @@ def main() -> None:
     require(r"recordAction\(componentID:\s*\"notebook\.page\.delete\.", source, "Page delete menu action must record telemetry.")
     require(r"recordAction\(componentID:\s*\"page\.preview\.export\.image\"", source, "Page image export menu action must record telemetry.")
     require(r"recordAction\(componentID:\s*\"page\.preview\.export\.pdf\"", source, "Page PDF export menu action must record telemetry.")
+    verify_page_template_quality(page_templates, page_template_applier, source)
 
     top_tool = require_block(r"private struct EditorTopTool: View \{(?P<body>.*?)\n\}", source, "EditorTopTool not found.")
     if top_tool is not None:
@@ -316,8 +644,6 @@ def main() -> None:
         (r"preset\.kind\s*==\s*\.wordArt\s*\?\s*\"textformat\.size\"", "WordArt preset cards must use the text sizing icon."),
         (r"toolButton\(\"wand\.and\.stars\",\s*\"ArtStyle\"", "ArtStyle tool must use the wand icon."),
         (r"toolButton\(\"rectangle\.on\.rectangle\.angled\",\s*\"Texture\"", "Texture tool must use a layered texture icon."),
-        (r"toolButton\(\"rectangle\.3\.group\",\s*\"Group\"", "Group action must use a grouping icon, not a layer stack icon."),
-        (r"toolButton\(\"rectangle\.split\.3x1\",\s*\"Ungroup\"", "Ungroup action must use a split-group icon, not a layer stack icon."),
         (r"case\s+\.adjust:\s+return\s+\"dial\.medium\"", "Adjust shelf must use a tuning dial icon."),
         (r"case\s+\.object:\s+return\s+\"cursorarrow\"", "Object shelf must use a selection cursor icon, not the layer stack icon."),
         (r"toolButton\(\"paintbrush\.pointed\",\s*\"Brush\",\s*action:\s*onBrush\)", "Brush insertion must be labeled Brush and use the brush icon, not a Stroke style label."),

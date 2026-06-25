@@ -116,6 +116,11 @@ struct CanvasElement: Identifiable, Codable {
     var zIndex: Int
     var opacity: Double = 1
     var colorHex = "#2E2824"
+    var backgroundHex: String?
+    var strokeHex = "#2E2824"
+    var strokeWidth: CGFloat = 0
+    var textShadowEnabled = false
+    var shadowColorHex = "#2E2824"
     var fontName = "Georgia"
     var fontSize: CGFloat = 72
     var bold = false
@@ -131,6 +136,7 @@ struct CanvasElement: Identifiable, Codable {
     var brushPoints: [CodablePoint] = []
     var groupID: UUID?
     var note: String?
+    var editHint: String?
     var connectorStartID: UUID?
     var connectorEndID: UUID?
     var connectorStartPoint: CodablePoint?
@@ -151,6 +157,11 @@ struct CanvasElement: Identifiable, Codable {
         zIndex: Int,
         opacity: Double = 1,
         colorHex: String = "#2E2824",
+        backgroundHex: String? = nil,
+        strokeHex: String = "#2E2824",
+        strokeWidth: CGFloat = 0,
+        textShadowEnabled: Bool = false,
+        shadowColorHex: String = "#2E2824",
         fontName: String = "Georgia",
         fontSize: CGFloat = 72,
         bold: Bool = false,
@@ -166,6 +177,7 @@ struct CanvasElement: Identifiable, Codable {
         brushPoints: [CodablePoint] = [],
         groupID: UUID? = nil,
         note: String? = nil,
+        editHint: String? = nil,
         connectorStartID: UUID? = nil,
         connectorEndID: UUID? = nil,
         connectorStartPoint: CodablePoint? = nil,
@@ -185,6 +197,11 @@ struct CanvasElement: Identifiable, Codable {
         self.zIndex = zIndex
         self.opacity = opacity
         self.colorHex = colorHex
+        self.backgroundHex = backgroundHex
+        self.strokeHex = strokeHex
+        self.strokeWidth = strokeWidth
+        self.textShadowEnabled = textShadowEnabled
+        self.shadowColorHex = shadowColorHex
         self.fontName = fontName
         self.fontSize = fontSize
         self.bold = bold
@@ -200,6 +217,7 @@ struct CanvasElement: Identifiable, Codable {
         self.brushPoints = brushPoints
         self.groupID = groupID
         self.note = note
+        self.editHint = editHint
         self.connectorStartID = connectorStartID
         self.connectorEndID = connectorEndID
         self.connectorStartPoint = connectorStartPoint
@@ -222,6 +240,17 @@ struct CanvasElement: Identifiable, Codable {
         zIndex = try container.decode(Int.self, forKey: .zIndex)
         opacity = try container.decodeIfPresent(Double.self, forKey: .opacity) ?? 1
         colorHex = try container.decodeIfPresent(String.self, forKey: .colorHex) ?? "#2E2824"
+        backgroundHex = try container.decodeIfPresent(String.self, forKey: .backgroundHex)
+        strokeHex = try container.decodeIfPresent(String.self, forKey: .strokeHex) ?? colorHex
+        if let decodedStrokeWidth = try container.decodeIfPresent(CGFloat.self, forKey: .strokeWidth) {
+            strokeWidth = decodedStrokeWidth
+        } else if kind == .text || kind == .wordArt {
+            strokeWidth = 0
+        } else {
+            strokeWidth = (try container.decodeIfPresent(Bool.self, forKey: .stroke) == true) ? 6 : 0
+        }
+        textShadowEnabled = try container.decodeIfPresent(Bool.self, forKey: .textShadowEnabled) ?? (try container.decodeIfPresent(Bool.self, forKey: .shadow) ?? false)
+        shadowColorHex = try container.decodeIfPresent(String.self, forKey: .shadowColorHex) ?? "#2E2824"
         fontName = try container.decodeIfPresent(String.self, forKey: .fontName) ?? "Georgia"
         fontSize = try container.decodeIfPresent(CGFloat.self, forKey: .fontSize) ?? 72
         bold = try container.decodeIfPresent(Bool.self, forKey: .bold) ?? false
@@ -237,6 +266,7 @@ struct CanvasElement: Identifiable, Codable {
         brushPoints = try container.decodeIfPresent([CodablePoint].self, forKey: .brushPoints) ?? []
         groupID = try container.decodeIfPresent(UUID.self, forKey: .groupID)
         note = try container.decodeIfPresent(String.self, forKey: .note)
+        editHint = try container.decodeIfPresent(String.self, forKey: .editHint)
         connectorStartID = try container.decodeIfPresent(UUID.self, forKey: .connectorStartID)
         connectorEndID = try container.decodeIfPresent(UUID.self, forKey: .connectorEndID)
         connectorStartPoint = try container.decodeIfPresent(CodablePoint.self, forKey: .connectorStartPoint)
@@ -475,8 +505,32 @@ enum CanvasInsertError: Error, LocalizedError {
 struct PageTemplateDefinition: Identifiable {
     let id: String
     let title: String
+    let subtitle: String?
+    let city: String?
+    let country: String?
+    let tags: [String]
     let background: CanvasBackground
     let elements: [CanvasElement]
+
+    init(
+        id: String,
+        title: String,
+        subtitle: String? = nil,
+        city: String? = nil,
+        country: String? = nil,
+        tags: [String] = [],
+        background: CanvasBackground,
+        elements: [CanvasElement]
+    ) {
+        self.id = id
+        self.title = title
+        self.subtitle = subtitle
+        self.city = city
+        self.country = country
+        self.tags = tags
+        self.background = background
+        self.elements = elements
+    }
 }
 
 struct TextStyleParameters {
@@ -484,6 +538,12 @@ struct TextStyleParameters {
     var fontName: String = "Georgia"
     var fontSize: CGFloat = 78
     var colorHex: String = "#2E2824"
+    var opacity: Double = 1
+    var backgroundHex: String? = nil
+    var strokeHex: String = "#2E2824"
+    var strokeWidth: CGFloat = 0
+    var shadowEnabled: Bool = false
+    var shadowColorHex: String = "#2E2824"
     var bold: Bool = true
     var italic: Bool = false
     var alignment: String = "center"

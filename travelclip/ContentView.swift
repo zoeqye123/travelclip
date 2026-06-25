@@ -20,26 +20,47 @@ import UniformTypeIdentifiers
 
 struct ContentView: View {
     @StateObject private var repository = NotebookRepository()
+    @StateObject private var authStore = LocalAuthStore()
     @State private var path: [TravelRoute] = []
     @State private var selectedRootTab: RootTab = .home
+    private let isAuthTemporarilyDisabled = true
 
     var body: some View {
-        NavigationStack(path: $path) {
-            HomeView(repository: repository, path: $path, selectedRootTab: $selectedRootTab)
-                .navigationDestination(for: TravelRoute.self) { route in
-                    switch route {
-                    case .notebook(let notebookID):
-                        NotebookDetailView(repository: repository, notebookID: notebookID, path: $path)
-                    case .preview(let pageID):
-                        PagePreviewView(repository: repository, pageID: pageID, path: $path)
-                    case .presentation(let pageID):
-                        CanvasPresentationView(repository: repository, pageID: pageID)
-                    case .editor(let pageID):
-                        CanvasEditorView(repository: repository, pageID: pageID)
-                    case .editorLaunch(let pageID, let action):
-                        CanvasEditorView(repository: repository, pageID: pageID, launchAction: action)
+        Group {
+            // TODO: Re-enable local auth before release.
+            if isAuthTemporarilyDisabled || authStore.isSignedIn {
+                NavigationStack(path: $path) {
+                    HomeView(
+                        repository: repository,
+                        authStore: authStore,
+                        path: $path,
+                        selectedRootTab: $selectedRootTab
+                    )
+                    .navigationDestination(for: TravelRoute.self) { route in
+                        switch route {
+                        case .notebook(let notebookID):
+                            NotebookDetailView(repository: repository, notebookID: notebookID, path: $path)
+                        case .preview(let pageID):
+                            PagePreviewView(repository: repository, pageID: pageID, path: $path)
+                        case .presentation(let pageID):
+                            CanvasPresentationView(repository: repository, pageID: pageID)
+                        case .editor(let pageID):
+                            CanvasEditorView(repository: repository, pageID: pageID)
+                        case .editorLaunch(let pageID, let action):
+                            CanvasEditorView(repository: repository, pageID: pageID, launchAction: action)
+                        }
                     }
                 }
+            } else {
+                LoginView(authStore: authStore)
+            }
+        }
+        .animation(.snappy(duration: 0.28), value: authStore.isSignedIn)
+        .onChange(of: authStore.isSignedIn) { _, isSignedIn in
+            if !isSignedIn {
+                path.removeAll()
+                selectedRootTab = .home
+            }
         }
     }
 }
@@ -73,12 +94,15 @@ private enum RootTab: String, CaseIterable, Identifiable {
 
 private struct HomeView: View {
     @ObservedObject var repository: NotebookRepository
+    @ObservedObject var authStore: LocalAuthStore
     @Binding var path: [TravelRoute]
     @Binding var selectedRootTab: RootTab
     @StateObject private var locationProvider = TravelLocationProvider()
     @State private var showingNewNotebook = false
     @State private var showingPlaceSearch = false
     @State private var showingNotifications = false
+    @State private var showingTemplateCenter = false
+    @State private var showingQuickClip = false
 
     var body: some View {
         ZStack(alignment: .bottom) {
@@ -121,6 +145,43 @@ private struct HomeView: View {
             .presentationDetents([.medium, .large])
             .presentationDragIndicator(.visible)
         }
+        .sheet(isPresented: $showingTemplateCenter) {
+            TemplateCenterView(
+                repository: repository,
+                location: locationProvider.templateLocation,
+                mode: .createPage,
+                onTemplate: { template in
+                    let pageID = repository.createPage(in: nil, title: template.title, template: .blank, saveAfterCreate: false, draft: true)
+                    repository.applyTemplate(template, to: pageID)
+                    showingTemplateCenter = false
+                    path.append(.editor(pageID))
+                },
+                onCancel: {
+                    showingTemplateCenter = false
+                }
+            )
+            .presentationDetents([.large])
+            .presentationDragIndicator(.visible)
+        }
+        .sheet(isPresented: $showingQuickClip) {
+            QuickClipSheet(
+                initialPlace: locationProvider.quickClipPlace,
+                onCreate: { place, note, photoData in
+                    switch repository.createQuickClip(in: nil, place: place, note: note, photoData: photoData) {
+                    case .success(let pageID):
+                        showingQuickClip = false
+                        path.append(.preview(pageID))
+                    case .failure:
+                        showingQuickClip = false
+                    }
+                },
+                onCancel: {
+                    showingQuickClip = false
+                }
+            )
+            .presentationDetents([.large])
+            .presentationDragIndicator(.visible)
+        }
         .onAppear {
             repository.bootstrapIfNeeded()
         }
@@ -136,23 +197,35 @@ private struct HomeView: View {
                 createStorePage(action)
             }
         case .universe:
-            UniverseRootTabView(repository: repository, locationProvider: locationProvider) { action in
-                createStorePage(action)
-            }
-        case .my:
-            MyLibraryRootTabView(
+            UniverseRootTabView(
                 repository: repository,
-                path: $path,
-                showingNewNotebook: $showingNewNotebook,
-                onCreatePage: {
-                    repository.createPageAndOpen(in: nil, title: "New Page", template: .blank) { pageID in
-                        path.append(.editor(pageID))
+                locationProvider: locationProvider,
+                onInsert: { action in
+                    createStorePage(action)
+                },
+                onTemplates: {
+                    showingTemplateCenter = true
+                }
+            )
+        case .my:
+                MyLibraryRootTabView(
+                    repository: repository,
+                    currentUser: authStore.currentUser,
+                    path: $path,
+                    showingNewNotebook: $showingNewNotebook,
+                    onQuickClip: {
+                        showingQuickClip = true
+                    },
+                    onCreatePage: {
+                        repository.createPageAndOpen(in: nil, title: "New Page", template: .blank) { pageID in
+                            path.append(.editor(pageID))
                     }
                 },
                 onTemplatePage: {
-                    repository.createPageAndOpen(in: nil, title: "Template Page", template: .postcard) { pageID in
-                        path.append(.editor(pageID))
-                    }
+                    showingTemplateCenter = true
+                },
+                onSignOut: {
+                    authStore.signOut()
                 }
             )
         }
@@ -172,15 +245,16 @@ private struct HomeView: View {
                     onLocate: { locationProvider.requestLocation() }
                 )
                 CreateBanner(
+                    onQuickClip: {
+                        showingQuickClip = true
+                    },
                     onCreatePage: {
                         repository.createPageAndOpen(in: nil, title: "New Page", template: .blank) { pageID in
                             path.append(.editor(pageID))
                         }
                     },
                     onTemplatePage: {
-                        repository.createPageAndOpen(in: nil, title: "Template Page", template: .postcard) { pageID in
-                            path.append(.editor(pageID))
-                        }
+                        showingTemplateCenter = true
                     }
                 )
                 LocationStickerShelf(
@@ -226,8 +300,6 @@ private struct HomeView: View {
             return
         case .background(let background):
             repository.updateBackground(background, for: pageID)
-        case .template(let template):
-            repository.applyTemplate(template, to: pageID)
         }
         path.append(.editor(pageID))
     }
@@ -264,6 +336,20 @@ private final class TravelLocationProvider: NSObject, ObservableObject, CLLocati
             return "\(city) Page"
         }
         return "Location Page"
+    }
+
+    var templateLocation: TemplateLocation {
+        TemplateLocation(city: city, country: country, placeName: searchedPlaceName, regionName: regionName)
+    }
+
+    var quickClipPlace: String {
+        if let searchedPlaceName, !searchedPlaceName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return searchedPlaceName
+        }
+        if let city, !city.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return city
+        }
+        return ""
     }
 
     var placeDisplayName: String {
@@ -438,6 +524,224 @@ private enum TravelRoute: Hashable {
     case editorLaunch(UUID, EditorLaunchAction)
 }
 
+private enum AuthMode: String, CaseIterable, Identifiable {
+    case signIn
+    case register
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .signIn: return "登录"
+        case .register: return "注册"
+        }
+    }
+}
+
+private struct LoginView: View {
+    @ObservedObject var authStore: LocalAuthStore
+    @State private var mode: AuthMode = .signIn
+    @State private var displayName = ""
+    @State private var email = ""
+    @State private var password = ""
+    @State private var errorMessage: String?
+
+    private var primaryTitle: String {
+        mode == .signIn ? "登录 TravelClip" : "创建账号"
+    }
+
+    var body: some View {
+        ZStack {
+            PaperBackground().ignoresSafeArea()
+
+            ScrollView(showsIndicators: false) {
+                VStack(alignment: .leading, spacing: 24) {
+                    brandHeader
+
+                    VStack(alignment: .leading, spacing: 16) {
+                        Picker("登录方式", selection: $mode) {
+                            ForEach(AuthMode.allCases) { mode in
+                                Text(mode.title).tag(mode)
+                            }
+                        }
+                        .pickerStyle(.segmented)
+                        .onChange(of: mode) { _, _ in
+                            errorMessage = nil
+                        }
+
+                        VStack(spacing: 12) {
+                            if mode == .register {
+                                AuthTextField(
+                                    title: "昵称",
+                                    icon: "person",
+                                    text: $displayName,
+                                    contentType: .name
+                                )
+                                .transition(.opacity.combined(with: .move(edge: .top)))
+                            }
+
+                            AuthTextField(
+                                title: "邮箱",
+                                icon: "envelope",
+                                text: $email,
+                                keyboardType: .emailAddress,
+                                contentType: .emailAddress
+                            )
+
+                            AuthSecureField(title: "密码", text: $password)
+                        }
+
+                        if let errorMessage {
+                            Label(errorMessage, systemImage: "exclamationmark.circle")
+                                .font(.system(size: 13, weight: .semibold, design: .rounded))
+                                .foregroundStyle(Color.red)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+
+                        TrackedEditorToolButton(componentID: "auth.submit.\(mode.rawValue)", disabled: false, action: submit) {
+                            HStack(spacing: 10) {
+                                Image(systemName: mode == .signIn ? "arrow.right.circle.fill" : "person.badge.plus")
+                                Text(primaryTitle)
+                            }
+                            .font(.system(size: 16, weight: .bold, design: .rounded))
+                            .foregroundStyle(Color.paper)
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 52)
+                            .background(Color.clay)
+                            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                        }
+
+                        Text(mode == .signIn ? "使用已注册邮箱和密码继续编辑你的旅行手账。" : "账号保存在本机，密码会以摘要形式存储。")
+                            .font(.system(size: 12, weight: .medium, design: .rounded))
+                            .foregroundStyle(Color.inkSoft)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    .padding(18)
+                    .background(Color.paper.opacity(0.96))
+                    .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: 24, style: .continuous).stroke(Color.lineSoft, lineWidth: 1.2))
+                    .shadow(color: Color.shadowSoft, radius: 18, x: 0, y: 10)
+                }
+                .padding(.horizontal, 22)
+                .padding(.top, 72)
+                .padding(.bottom, 36)
+                .frame(maxWidth: 520)
+                .frame(maxWidth: .infinity)
+            }
+        }
+    }
+
+    private var brandHeader: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Image(systemName: "map.fill")
+                .font(.system(size: 28, weight: .semibold))
+                .foregroundStyle(Color.clay)
+                .frame(width: 58, height: 58)
+                .background(Color.paper)
+                .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(Color.lineSoft, lineWidth: 1.2))
+
+            VStack(alignment: .leading, spacing: 6) {
+                Text("TravelClip")
+                    .font(.system(size: 38, weight: .bold, design: .serif))
+                    .foregroundStyle(Color.ink)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.72)
+
+                Text("登录后继续整理旅途剪贴、票据和本地笔记。")
+                    .font(.system(size: 15, weight: .medium, design: .rounded))
+                    .foregroundStyle(Color.inkSoft)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    private func submit() {
+        errorMessage = nil
+        let result: Result<Void, LocalAuthError>
+        switch mode {
+        case .signIn:
+            result = authStore.signIn(email: email, password: password)
+        case .register:
+            result = authStore.register(displayName: displayName, email: email, password: password)
+        }
+
+        if case .failure(let error) = result {
+            errorMessage = error.localizedDescription
+        }
+    }
+}
+
+private struct AuthTextField: View {
+    let title: String
+    let icon: String
+    @Binding var text: String
+    var keyboardType: UIKeyboardType = .default
+    var contentType: UITextContentType?
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: icon)
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(Color.clay)
+                .frame(width: 26)
+
+            TextField(title, text: $text)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                .keyboardType(keyboardType)
+                .textContentType(contentType)
+                .font(.system(size: 16, weight: .semibold, design: .rounded))
+                .foregroundStyle(Color.ink)
+        }
+        .padding(.horizontal, 14)
+        .frame(height: 50)
+        .background(Color.background.opacity(0.72))
+        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(Color.lineSoft, lineWidth: 1))
+    }
+}
+
+private struct AuthSecureField: View {
+    let title: String
+    @Binding var text: String
+    @State private var isVisible = false
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "lock")
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(Color.clay)
+                .frame(width: 26)
+
+            Group {
+                if isVisible {
+                    TextField(title, text: $text)
+                } else {
+                    SecureField(title, text: $text)
+                }
+            }
+            .textContentType(.password)
+            .font(.system(size: 16, weight: .semibold, design: .rounded))
+            .foregroundStyle(Color.ink)
+
+            TrackedEditorToolButton(componentID: "auth.password.visibility", disabled: false, action: {
+                isVisible.toggle()
+            }) {
+                Image(systemName: isVisible ? "eye.slash" : "eye")
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(Color.inkSoft)
+                    .frame(width: 32, height: 32)
+            }
+        }
+        .padding(.horizontal, 14)
+        .frame(height: 50)
+        .background(Color.background.opacity(0.72))
+        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(Color.lineSoft, lineWidth: 1))
+    }
+}
+
 private enum EditorLaunchAction: Hashable {
     case textPreset(String)
     case wordArtPreset(String)
@@ -459,6 +763,11 @@ private struct PageCreateContext: Identifiable {
     let notebookID: UUID?
 }
 
+private struct TemplateCreateContext: Identifiable {
+    let id = UUID()
+    let notebookID: UUID?
+}
+
 private struct PageNotebookMoveContext: Identifiable {
     let id = UUID()
     let pageID: UUID
@@ -471,6 +780,7 @@ private struct NotebookDetailView: View {
     @State private var pageTitle = ""
     @State private var pageBeingEdited: JournalPage?
     @State private var pageCreateContext: PageCreateContext?
+    @State private var templateCreateContext: TemplateCreateContext?
     @State private var showingNotebookEditor = false
     @State private var exportItem: ShareableExport?
     @State private var showingShare = false
@@ -604,12 +914,28 @@ private struct NotebookDetailView: View {
                 },
                 onTemplate: {
                     pageCreateContext = nil
-                    repository.createPageAndOpen(in: context.notebookID, title: "Template Page", template: .postcard) { pageID in
-                        path.append(.editor(pageID))
-                    }
+                    templateCreateContext = TemplateCreateContext(notebookID: context.notebookID)
                 }
             )
             .presentationDetents([.height(190)])
+            .presentationDragIndicator(.visible)
+        }
+        .sheet(item: $templateCreateContext) { context in
+            TemplateCenterView(
+                repository: repository,
+                location: TemplateLocation(city: nil, country: nil, placeName: notebook?.title, regionName: nil),
+                mode: .createPage,
+                onTemplate: { template in
+                    let pageID = repository.createPage(in: context.notebookID, title: template.title, template: .blank, saveAfterCreate: false, draft: true)
+                    repository.applyTemplate(template, to: pageID)
+                    templateCreateContext = nil
+                    path.append(.editor(pageID))
+                },
+                onCancel: {
+                    templateCreateContext = nil
+                }
+            )
+            .presentationDetents(EditorSheetSizing.addDetents)
             .presentationDragIndicator(.visible)
         }
         .sheet(isPresented: $showingNotebookEditor) {
@@ -793,7 +1119,7 @@ private struct NotebookPageCard: View {
                 VStack(spacing: 0) {
                     CanvasThumbnail(repository: repository, document: page.canvasDocument)
                         .frame(maxWidth: .infinity)
-                        .aspectRatio(0.92, contentMode: .fit)
+                        .aspectRatio(page.canvasDocument.canvasSize.width / page.canvasDocument.canvasSize.height, contentMode: .fit)
                         .clipShape(RoundedRectangle(cornerRadius: 0, style: .continuous))
 
                     Rectangle()
@@ -1615,6 +1941,8 @@ private struct CanvasEditorView: View {
     @State private var editingElementID: UUID?
     @State private var draftNote = ""
     @State private var selectedPhoto: PhotosPickerItem?
+    @State private var replacementPhoto: PhotosPickerItem?
+    @State private var showingReplacementPhotoPicker = false
     @State private var showingTicketSheet = false
     @State private var showingFileImporter = false
     @State private var activePanel: EditorPanel = .multi
@@ -1625,6 +1953,7 @@ private struct CanvasEditorView: View {
     @State private var activeBrushWidth: CGFloat = 46
     @State private var activeBrushOpacity = 0.72
     @State private var launchActionHandled = false
+    @State private var starterHintShown = false
     @State private var pageFinished = false
     @State private var snapToGrid = true
     @State private var textStyle = TextStyleParameters(text: "")
@@ -1651,6 +1980,15 @@ private struct CanvasEditorView: View {
         guard let page else { return [] }
         let availableIDs = Set(page.canvasDocument.elements.map(\.id))
         return repository.selectedElementIDs.intersection(availableIDs)
+    }
+
+    private var selectedElement: CanvasElement? {
+        guard let selectedElementID else { return nil }
+        return document.elements.first { $0.id == selectedElementID }
+    }
+
+    private var canReplaceSelectedImage: Bool {
+        selectedElementIDs.count == 1 && selectedElement?.kind == .image && selectedElement?.locked == false
     }
 
     var body: some View {
@@ -1698,6 +2036,21 @@ private struct CanvasEditorView: View {
                             imageURL: { repository.imageURL(for: $0) },
                             onSelect: { elementID, _ in
                                 repository.selectElement(elementID, extending: false, on: pageID)
+                                if let elementID,
+                                   document.elements.first(where: { $0.id == elementID })?.kind == .image {
+                                    activePanel = .multi
+                                    activeToolShelf = .object
+                                }
+                            },
+                            onEditElement: { elementID in
+                                repository.selectElement(elementID, extending: false, on: pageID)
+                                openElementEditor(elementID)
+                            },
+                            onReplacePlaceholderImage: { elementID in
+                                repository.selectElement(elementID, extending: false, on: pageID)
+                                activePanel = .multi
+                                activeToolShelf = .object
+                                showingReplacementPhotoPicker = true
                             },
                             onMoveStart: { repository.beginUndoGroup(for: pageID) },
                             onMove: { elementID, position in
@@ -2061,12 +2414,6 @@ private struct CanvasEditorView: View {
                             onDuplicate: {
                                 repository.duplicateSelection(on: pageID)
                             },
-                            onGroup: {
-                                repository.groupSelection(on: pageID)
-                            },
-                            onUngroup: {
-                                repository.ungroupSelection(on: pageID)
-                            },
                             snapToGrid: snapToGrid,
                             onToggleSnap: {
                                 snapToGrid.toggle()
@@ -2091,6 +2438,12 @@ private struct CanvasEditorView: View {
                                     EditorToolItem(icon: "plus.circle", title: "Picture")
                                 }
                                 .buttonStyle(.plain)
+                            },
+                            replacePhotoPicker: {
+                                PhotosPicker(selection: $replacementPhoto, matching: .images) {
+                                    EditorToolItem(icon: "photo.badge.arrow.down", title: "Replace")
+                                }
+                                .buttonStyle(.plain)
                             }
                         )
                         .frame(width: proxy.size.width, height: panelHeight)
@@ -2107,6 +2460,7 @@ private struct CanvasEditorView: View {
             Task { @MainActor in
                 repository.ensureEditableCanvas(for: pageID)
                 applyLaunchActionIfNeeded()
+                showStarterHintIfNeeded()
             }
             if selectedElementID == nil {
                 repository.selectedElementID = nil
@@ -2130,6 +2484,9 @@ private struct CanvasEditorView: View {
             TextInputSheet(text: $draftText, style: $textStyle, mode: textMode) {
                 var resolvedStyle = textStyle
                 resolvedStyle.text = draftText
+                guard !resolvedStyle.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                    return CanvasInsertError.emptyText.localizedDescription
+                }
                 if let editingElementID {
                     repository.updateTextElement(editingElementID, style: resolvedStyle, on: pageID)
                     self.editingElementID = nil
@@ -2241,6 +2598,7 @@ private struct CanvasEditorView: View {
                 document: document,
                 onTemplate: { template in
                     repository.applyTemplate(template, to: pageID)
+                    showStarterHintIfNeeded(message: "Template applied. Start by replacing the selected photo.")
                     assetSheet = nil
                 },
                 onTextPreset: { preset in
@@ -2307,6 +2665,27 @@ private struct CanvasEditorView: View {
                 selectedPhoto = nil
             }
         }
+        .onChange(of: replacementPhoto) { _, newItem in
+            guard let newItem else { return }
+            guard canReplaceSelectedImage, let elementID = selectedElementID else {
+                replacementPhoto = nil
+                return
+            }
+            InteractionTelemetry.recordAction(componentID: "editor.tool.picture.picker", disabled: false)
+            Task {
+                let result = await repository.replaceImageElement(elementID, with: newItem, on: pageID)
+                switch result {
+                case .success:
+                    activePanel = .multi
+                    activeToolShelf = .object
+                    showInsertStatus("Photo replaced")
+                case .failure(let error):
+                    showInsertStatus(error.localizedDescription, isError: true)
+                }
+                replacementPhoto = nil
+            }
+        }
+        .photosPicker(isPresented: $showingReplacementPhotoPicker, selection: $replacementPhoto, matching: .images)
         .fileImporter(isPresented: $showingFileImporter, allowedContentTypes: [.item], allowsMultipleSelection: false) { result in
             switch result {
             case .success(let urls):
@@ -2362,7 +2741,12 @@ private struct CanvasEditorView: View {
 
     private func openSelectedElementEditor() {
         guard let selectedElementID,
-              let element = document.elements.first(where: { $0.id == selectedElementID }),
+              !document.elements.isEmpty else { return }
+        openElementEditor(selectedElementID)
+    }
+
+    private func openElementEditor(_ elementID: UUID) {
+        guard let element = document.elements.first(where: { $0.id == elementID }),
               !element.locked else { return }
         editingElementID = element.id
         switch element.kind {
@@ -2374,6 +2758,12 @@ private struct CanvasEditorView: View {
                 fontName: element.fontName,
                 fontSize: element.fontSize,
                 colorHex: element.colorHex,
+                opacity: element.opacity,
+                backgroundHex: element.backgroundHex,
+                strokeHex: element.strokeHex,
+                strokeWidth: element.strokeWidth,
+                shadowEnabled: element.textShadowEnabled || element.shadow,
+                shadowColorHex: element.shadowColorHex,
                 bold: element.bold,
                 italic: element.italic,
                 alignment: element.textAlignment,
@@ -2499,6 +2889,15 @@ private struct CanvasEditorView: View {
         }
     }
 
+    private func showStarterHintIfNeeded(message: String = "Start by replacing the selected photo") {
+        guard !starterHintShown,
+              selectedElement?.isImagePlaceholder == true else { return }
+        starterHintShown = true
+        activePanel = .multi
+        activeToolShelf = .object
+        showInsertStatus(message)
+    }
+
 }
 
 private struct EditorTopBar: View {
@@ -2583,6 +2982,8 @@ private struct CanvasWorkspace: View {
     let selectedElementIDs: Set<UUID>
     let imageURL: (String?) -> URL?
     let onSelect: (UUID?, Bool) -> Void
+    let onEditElement: (UUID) -> Void
+    let onReplacePlaceholderImage: (UUID) -> Void
     let onMoveStart: () -> Void
     let onMove: (UUID, CGPoint) -> Void
     let onMoveSelection: ([UUID: CGPoint], CGSize) -> Void
@@ -2799,9 +3200,19 @@ private struct CanvasWorkspace: View {
                             }
                     )
                 .simultaneousGesture(elementTransformGesture(for: element))
+                    .onTapGesture(count: 2, coordinateSpace: .named("canvasSpace")) { location in
+                        recordCanvasTap(componentID: "canvas.element.edit.\(element.id.uuidString.lowercased())", location: location)
+                        if element.isTextElement && !element.locked {
+                            onEditElement(element.id)
+                        }
+                    }
                     .onTapGesture(coordinateSpace: .named("canvasSpace")) { location in
                         recordCanvasTap(componentID: "canvas.element.select.\(element.id.uuidString.lowercased())", location: location)
-                        onSelect(element.id, true)
+                        if element.isImagePlaceholder {
+                            onReplacePlaceholderImage(element.id)
+                        } else {
+                            onSelect(element.id, true)
+                        }
                     }
             }
 
@@ -2991,6 +3402,13 @@ private struct CanvasWorkspace: View {
                 onDuplicate: onDuplicateSelection,
                 onToggleHidden: onToggleHiddenSelection,
                 onToggleLocked: onToggleLockedSelection,
+                onReplaceImage: {
+                    guard let selectedElement = selectedElements.first,
+                          selectedElements.count == 1,
+                          selectedElement.kind == .image,
+                          !selectedElement.locked else { return }
+                    onReplacePlaceholderImage(selectedElement.id)
+                },
                 onEdit: onEditSelected,
                 onDelete: onDeleteSelection
             )
@@ -3361,26 +3779,9 @@ private struct CanvasElementView: View {
                 MediaCardElement(element: element, mediaKind: .audio, fileURL: imageURL(element.localPath))
                     .frame(width: element.width, height: element.height)
             case .text:
-                Text(element.text ?? "")
-                    .font(FontResolver.swiftUIFont(name: element.fontName, size: element.fontSize, bold: element.bold, italic: element.italic))
-                    .foregroundStyle(Color(hex: element.colorHex))
-                    .multilineTextAlignment(element.textAlignmentValue)
-                    .frame(width: element.width, height: element.height)
-                    .minimumScaleFactor(0.3)
+                StyledCanvasTextElement(element: element, forceWordArt: false)
             case .wordArt:
-                Text(element.text ?? "")
-                    .font(FontResolver.swiftUIFont(name: element.fontName, size: element.fontSize, bold: true, italic: element.italic))
-                    .foregroundStyle(
-                        LinearGradient(
-                            colors: [Color(hex: element.colorHex), Color.sand, Color.paper],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
-                    )
-                    .multilineTextAlignment(element.textAlignmentValue)
-                    .frame(width: element.width, height: element.height)
-                    .minimumScaleFactor(0.3)
-                    .shadow(color: Color.clay.opacity(0.28), radius: 0, x: 5, y: 5)
+                StyledCanvasTextElement(element: element, forceWordArt: true)
             case .sticker:
                 Text(element.symbol ?? "sparkle")
                     .font(.system(size: min(element.width, element.height) * 0.72, weight: .semibold))
@@ -3397,12 +3798,25 @@ private struct CanvasElementView: View {
                         .frame(width: element.width, height: element.height)
                         .clipShape(RoundedRectangle(cornerRadius: element.cornerRadius, style: .continuous))
                 } else {
-                    Image(systemName: "photo")
-                        .font(.system(size: 58, weight: .semibold))
+                    ZStack {
+                        RoundedRectangle(cornerRadius: element.cornerRadius, style: .continuous)
+                            .fill(Color.paper)
+                        RoundedRectangle(cornerRadius: max(element.cornerRadius - 8, 10), style: .continuous)
+                            .stroke(Color.inkSoft.opacity(0.36), style: StrokeStyle(lineWidth: 2, dash: [10, 8]))
+                            .padding(max(10, min(element.width, element.height) * 0.05))
+                        VStack(spacing: max(6, min(element.width, element.height) * 0.03)) {
+                            Image(systemName: "photo.badge.plus")
+                                .font(.system(size: max(24, min(element.width, element.height) * 0.18), weight: .semibold))
+                            Text(element.editHint ?? "Tap to replace photo")
+                                .font(.system(size: max(10, min(18, min(element.width, element.height) * 0.055)), weight: .bold, design: .rounded))
+                                .lineLimit(2)
+                                .multilineTextAlignment(.center)
+                        }
                         .foregroundStyle(Color.inkSoft)
-                        .frame(width: element.width, height: element.height)
-                        .background(Color.paper)
-                        .clipShape(RoundedRectangle(cornerRadius: element.cornerRadius, style: .continuous))
+                        .padding(.horizontal, max(10, element.width * 0.08))
+                    }
+                    .frame(width: element.width, height: element.height)
+                    .clipShape(RoundedRectangle(cornerRadius: element.cornerRadius, style: .continuous))
                 }
             case .tape:
                 TapeElement(color: Color(hex: element.colorHex), imageURL: imageURL(element.localPath))
@@ -3425,9 +3839,9 @@ private struct CanvasElementView: View {
             }
         }
         .blur(radius: performanceMode ? 0 : element.blur)
-        .shadow(color: !performanceMode && element.shadow ? Color.black.opacity(0.18) : .clear, radius: 18, x: 0, y: 10)
+        .shadow(color: !performanceMode && element.shadow && !element.isTextElement ? Color.black.opacity(0.18) : .clear, radius: 18, x: 0, y: 10)
         .overlay {
-            if element.stroke {
+            if element.stroke && !element.isTextElement {
                 RoundedRectangle(cornerRadius: element.cornerRadius, style: .continuous)
                     .stroke(Color(hex: element.colorHex).opacity(0.72), lineWidth: 7)
                     .frame(width: element.width, height: element.height)
@@ -3462,6 +3876,37 @@ private struct CanvasElementView: View {
 }
 
 private extension CanvasElement {
+    var isImagePlaceholder: Bool {
+        kind == .image && !locked && (localPath?.isEmpty ?? true)
+    }
+
+    var isTextElement: Bool {
+        kind == .text || kind == .wordArt
+    }
+
+    var textShadowActive: Bool {
+        isTextElement && (textShadowEnabled || shadow)
+    }
+
+    var textStyleParameters: TextStyleParameters {
+        TextStyleParameters(
+            text: text ?? "",
+            fontName: fontName,
+            fontSize: fontSize,
+            colorHex: colorHex,
+            opacity: opacity,
+            backgroundHex: backgroundHex,
+            strokeHex: strokeHex,
+            strokeWidth: strokeWidth,
+            shadowEnabled: textShadowEnabled || shadow,
+            shadowColorHex: shadowColorHex,
+            bold: kind == .wordArt ? true : bold,
+            italic: italic,
+            alignment: textAlignment,
+            width: width
+        )
+    }
+
     var textAlignmentValue: TextAlignment {
         switch textAlignment {
         case "leading": return .leading
@@ -3511,6 +3956,56 @@ private extension CanvasElement {
             CodablePoint(x: point.x * scale, y: point.y * scale)
         }
         return copy
+    }
+}
+
+private struct StyledCanvasTextElement: View {
+    let element: CanvasElement
+    var forceWordArt = false
+
+    var body: some View {
+        ZStack {
+            if let backgroundHex = element.backgroundHex {
+                RoundedRectangle(cornerRadius: max(18, min(element.height * 0.22, 34)), style: .continuous)
+                    .fill(Color(hex: backgroundHex).opacity(0.82))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: max(18, min(element.height * 0.22, 34)), style: .continuous)
+                            .stroke(Color.paper.opacity(0.74), lineWidth: max(2, element.height * 0.018))
+                    )
+                    .padding(.horizontal, max(10, element.width * 0.018))
+                    .padding(.vertical, max(6, element.height * 0.08))
+            }
+
+            if element.strokeWidth > 0,
+               let image = TextRenderService.render(text: element.text ?? "", style: element.textStyleParameters, size: CGSize(width: element.width, height: element.height)) {
+                Image(uiImage: image)
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: element.width, height: element.height)
+            } else {
+                swiftUIText
+            }
+        }
+        .frame(width: element.width, height: element.height)
+        .shadow(
+            color: element.textShadowActive ? Color(hex: element.shadowColorHex).opacity(0.28) : .clear,
+            radius: element.textShadowActive ? 6 : 0,
+            x: element.textShadowActive ? 4 : 0,
+            y: element.textShadowActive ? 5 : 0
+        )
+    }
+
+    private var swiftUIText: some View {
+        Text(element.text ?? "")
+            .font(FontResolver.swiftUIFont(name: element.fontName, size: element.fontSize, bold: forceWordArt ? true : element.bold, italic: element.italic))
+            .foregroundStyle(foregroundStyle)
+            .multilineTextAlignment(element.textAlignmentValue)
+            .frame(width: element.width, height: element.height)
+            .minimumScaleFactor(0.3)
+    }
+
+    private var foregroundStyle: AnyShapeStyle {
+        return AnyShapeStyle(Color(hex: element.colorHex))
     }
 }
 
@@ -3633,8 +4128,8 @@ private final class CanvasImageCache {
 }
 
 private enum TextRenderService {
-    static func sampleImage(text: String, style: TextStyleParameters, scale: CGFloat = UIScreen.main.scale) -> UIImage? {
-        let previewText = text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Sample text" : text
+    static func sampleImage(text: String, style: TextStyleParameters, fallbackText: String = "Sample text", scale: CGFloat = UIScreen.main.scale) -> UIImage? {
+        let previewText = text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? fallbackText : text
         let width = min(max(style.width, 360), 920)
         let height = max(style.fontSize * 2.6, 150)
         return render(text: previewText, style: style, size: CGSize(width: width, height: height), scale: scale)
@@ -3651,13 +4146,17 @@ private enum TextRenderService {
             paragraph.lineBreakMode = .byWordWrapping
 
             let font = uiFont(name: style.fontName, size: style.fontSize, bold: style.bold, italic: style.italic)
-            let attributes: [NSAttributedString.Key: Any] = [
+            var attributes: [NSAttributedString.Key: Any] = [
                 .font: font,
                 .foregroundColor: UIColor(hex: style.colorHex),
                 .paragraphStyle: paragraph
             ]
+            if style.strokeWidth > 0 {
+                attributes[.strokeColor] = UIColor(hex: style.strokeHex)
+                attributes[.strokeWidth] = -abs(style.strokeWidth)
+            }
             let attributed = NSAttributedString(string: text, attributes: attributes)
-            let inset = max(18, style.fontSize * 0.18)
+            let inset = max(18, style.fontSize * 0.18) + max(style.strokeWidth * 2, 0)
             let rect = CGRect(x: inset, y: inset, width: max(1, size.width - inset * 2), height: max(1, size.height - inset * 2))
             attributed.draw(with: rect, options: [.usesLineFragmentOrigin, .usesFontLeading], context: nil)
         }
@@ -4545,6 +5044,7 @@ private struct FloatingSelectionToolbar: View {
     let onDuplicate: () -> Void
     let onToggleHidden: () -> Void
     let onToggleLocked: () -> Void
+    let onReplaceImage: () -> Void
     let onEdit: () -> Void
     let onDelete: () -> Void
     @State private var expandedPanel: FloatingToolbarPanel?
@@ -4578,6 +5078,12 @@ private struct FloatingSelectionToolbar: View {
             (selectedElement?.kind == .text || selectedElement?.kind == .wordArt || selectedElement?.kind == .link)
     }
 
+    private var canReplaceImage: Bool {
+        selectedCount == 1 &&
+            selectedElement?.locked == false &&
+            selectedElement?.kind == .image
+    }
+
     var body: some View {
         VStack(spacing: 7) {
             if expandedPanel == .color, canTuneColor {
@@ -4588,6 +5094,19 @@ private struct FloatingSelectionToolbar: View {
                 expandedTapeLengthPanel
             } else if expandedPanel == .style, canTuneStyle {
                 expandedStylePanel
+            }
+
+            if selectedElement?.isImagePlaceholder == true {
+                Text(selectedElement?.editHint ?? "Tap Replace to add your trip photo")
+                    .font(.system(size: 12, weight: .bold, design: .rounded))
+                    .foregroundStyle(Color.ink)
+                    .lineLimit(1)
+                    .padding(.horizontal, 12)
+                    .frame(height: 32)
+                    .background(Color.paper.opacity(0.94))
+                    .clipShape(Capsule())
+                    .overlay(Capsule().stroke(Color.clay.opacity(0.2), lineWidth: 1))
+                    .shadow(color: Color.black.opacity(0.1), radius: 8, x: 0, y: 4)
             }
 
             HStack(spacing: 7) {
@@ -4640,6 +5159,9 @@ private struct FloatingSelectionToolbar: View {
 
                 if canEdit {
                     toolbarButton("pencil", action: onEdit)
+                }
+                if canReplaceImage {
+                    toolbarButton("photo.badge.arrow.down", action: onReplaceImage)
                 }
                 toolbarButton("plus.square.on.square", action: onDuplicate)
                 toolbarButton(selectedElement?.hidden == true ? "eye" : "eye.slash", action: onToggleHidden)
@@ -4905,6 +5427,54 @@ private enum TextInsertMode {
     case wordArt
 }
 
+private enum TextStyleTab: String, CaseIterable {
+    case input
+    case color
+    case font
+    case format
+
+    var title: String {
+        switch self {
+        case .input: return "Input"
+        case .color: return "Color"
+        case .font: return "Font"
+        case .format: return "Format"
+        }
+    }
+
+    var icon: String {
+        switch self {
+        case .input: return "keyboard"
+        case .color: return "paintpalette"
+        case .font: return "textformat"
+        case .format: return "text.alignleft"
+        }
+    }
+}
+
+private enum FontOptionSource {
+    case recent
+    case system
+    case google
+
+    var id: String {
+        switch self {
+        case .recent: return "recent"
+        case .system: return "system"
+        case .google: return "google"
+        }
+    }
+}
+
+private struct FontOption: Identifiable, Equatable {
+    let name: String
+    let source: FontOptionSource
+
+    var id: String {
+        "\(source.id)-\(name)"
+    }
+}
+
 private enum CanvasAssetSheet: String, Identifiable {
     case templates
     case text
@@ -4940,7 +5510,124 @@ private enum StoreInsertAction {
     case textPreset(TextPresetDefinition)
     case brushPreset(BrushPresetDefinition)
     case background(BackgroundDefinition)
-    case template(PageTemplateDefinition)
+}
+
+private extension PageTemplateDefinition {
+    var searchTokens: [String] {
+        [title, id, subtitle ?? "", city ?? "", country ?? ""] + tags
+    }
+
+    var photoPlaceholderCount: Int {
+        elements.filter { $0.kind == .image && ($0.localPath?.isEmpty ?? true) }.count
+    }
+
+    var locationLabel: String? {
+        let parts = [city, country].compactMap { value -> String? in
+            guard let value, !value.isEmpty else { return nil }
+            return value
+        }
+        guard !parts.isEmpty else { return nil }
+        return parts.joined(separator: " / ")
+    }
+
+    var marketMetadata: String {
+        let label = locationLabel ?? "Global"
+        let photoText = photoPlaceholderCount == 1 ? "1 photo frame" : "\(photoPlaceholderCount) photo frames"
+        return "\(label) · \(photoText)"
+    }
+
+    var templateOutcomeLabel: String {
+        if hasTemplateToken("day-one-route") {
+            return "Build the first-day route order"
+        }
+        if hasTemplateToken("restaurant-log") {
+            return "Save dishes, queue, and table notes"
+        }
+        if hasTemplateToken("trip-recap") {
+            return "Turn trip photos into a recap"
+        }
+        if hasTemplateToken("booking") || hasTemplateToken("itinerary") {
+            return "Plan bookings and first-day route"
+        }
+        if hasTemplateToken("packing") || hasTemplateToken("checklist-flow") {
+            return "Check packing before departure"
+        }
+        if hasTemplateToken("ticket-log") {
+            return "Keep tickets and route details"
+        }
+        if hasTemplateToken("route-flow") || hasTemplateToken("city-walk") {
+            return "Record stops in travel order"
+        }
+        if hasTemplateToken("food-memory") {
+            return "Save local food notes"
+        }
+        if hasTemplateToken("city-card") || hasTemplateToken("share-card") {
+            return "Make a shareable city card"
+        }
+        if isMemoryTemplate {
+            return "Turn photos into a memory page"
+        }
+        return "Build an editable travel page"
+    }
+
+    var travelMomentLabel: String {
+        if hasTemplateToken("before-travel") { return "Before" }
+        if hasTemplateToken("after-travel") { return "After" }
+        return "During"
+    }
+
+    var travelMomentIcon: String {
+        switch travelMomentLabel {
+        case "Before": return "calendar.badge.clock"
+        case "After": return "square.and.arrow.up"
+        default: return "location"
+        }
+    }
+
+    var templateUseCaseLabel: String {
+        if hasTemplateToken("packing-check") { return "Packing" }
+        if hasTemplateToken("day-one-route") { return "Day 1" }
+        if isPlanTemplate { return "Plan" }
+        if isRouteTemplate { return "Route" }
+        if hasTemplateToken("city-card") { return "Postcard" }
+        if hasTemplateToken("food-memory") { return "Food Log" }
+        if isMemoryTemplate { return "Memory" }
+        if isCityTemplate { return "City Log" }
+        return "Journal"
+    }
+
+    var workflowLabel: String {
+        if hasTemplateToken("packing-check") { return "Packing Check" }
+        if hasTemplateToken("day-one-route") { return "Day 1 Route" }
+        if hasTemplateToken("restaurant-log") { return "Restaurant Log" }
+        if hasTemplateToken("trip-recap") { return "Trip Recap" }
+        if hasTemplateToken("city-walk") { return "City Walk" }
+        if hasTemplateToken("ticket-log") { return "Ticket Log" }
+        if hasTemplateToken("route-flow") { return "Route Flow" }
+        if hasTemplateToken("share-card") { return "Share Card" }
+        return templateUseCaseLabel
+    }
+
+    var isPlanTemplate: Bool {
+        hasTemplateToken("before-travel") || hasTemplateToken("plan") || hasTemplateToken("checklist") || hasTemplateToken("packing")
+    }
+
+    var isRouteTemplate: Bool {
+        hasTemplateToken("route-flow") || hasTemplateToken("map") || hasTemplateToken("route") || hasTemplateToken("walk") || hasTemplateToken("coastal")
+    }
+
+    var isMemoryTemplate: Bool {
+        hasTemplateToken("after-travel") || hasTemplateToken("memory") || hasTemplateToken("keepsake") || hasTemplateToken("photo") || hasTemplateToken("collage") || hasTemplateToken("moments")
+    }
+
+    var isCityTemplate: Bool {
+        city != nil || hasTemplateToken("city-log") || hasTemplateToken("city-card") || hasTemplateToken("city-walk") || hasTemplateToken("city") || hasTemplateToken("landmark") || hasTemplateToken("广州") || hasTemplateToken("深圳")
+    }
+
+    func hasTemplateToken(_ token: String) -> Bool {
+        let normalized = token.lowercased()
+        return searchTokens.contains { $0.lowercased().contains(normalized) }
+    }
 }
 
 private struct MaterialStoreHomeView: View {
@@ -5011,14 +5698,6 @@ private struct MaterialStoreHomeView: View {
         }
     }
 
-    private var filteredTemplates: [PageTemplateDefinition] {
-        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        guard !trimmed.isEmpty else { return repository.templateLibrary }
-        return repository.templateLibrary.filter { template in
-            [template.title, template.id].contains { $0.lowercased().contains(trimmed) }
-        }
-    }
-
     private var storeItemCount: Int {
         switch selectedCategory {
         case .materials:
@@ -5035,8 +5714,6 @@ private struct MaterialStoreHomeView: View {
             return filteredWordArtPresets.count
         case .backgrounds:
             return filteredBackgrounds.count
-        case .templates:
-            return filteredTemplates.count
         }
     }
 
@@ -5084,7 +5761,7 @@ private struct MaterialStoreHomeView: View {
 
     private var storeSubtitle: String {
         let location = locationProvider.mapDisplayName
-        return location == "Pick a place" ? "Materials, tape, text, brush, and WordArt" : "Materials near \(location)"
+        return location == "Pick a place" ? "Materials, tape, text, brush, and paper" : "Materials near \(location)"
     }
 
     private var searchField: some View {
@@ -5222,18 +5899,6 @@ private struct MaterialStoreHomeView: View {
                     }
                 }
             }
-        case .templates:
-            if filteredTemplates.isEmpty {
-                emptyStoreView
-            } else {
-                LazyVGrid(columns: [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)], spacing: 12) {
-                    ForEach(filteredTemplates) { template in
-                        TemplateChoiceCard(template: template, imageURL: { repository.imageURL(for: $0) }) {
-                            onInsert(.template(template))
-                        }
-                    }
-                }
-            }
         }
     }
 
@@ -5270,6 +5935,7 @@ private struct UniverseRootTabView: View {
     @ObservedObject var repository: NotebookRepository
     @ObservedObject var locationProvider: TravelLocationProvider
     let onInsert: (StoreInsertAction) -> Void
+    let onTemplates: () -> Void
 
     private var featuredGroups: [MaterialGroup] {
         let locationTokens = ([locationProvider.searchedPlaceName, locationProvider.city, locationProvider.regionName, locationProvider.country])
@@ -5293,7 +5959,7 @@ private struct UniverseRootTabView: View {
 
     private var universeSubtitle: String {
         let place = locationProvider.mapDisplayName
-        return place == "Pick a place" ? "Travel packs, templates, and local material ideas." : "Travel packs inspired by \(place)."
+        return place == "Pick a place" ? "Travel packs, local materials, and editable template ideas." : "Travel packs inspired by \(place)."
     }
 
     var body: some View {
@@ -5354,16 +6020,10 @@ private struct UniverseRootTabView: View {
                 }
 
                 VStack(alignment: .leading, spacing: 12) {
-                    Text("Start With A Layout")
+                    Text("City Templates")
                         .sectionTitle()
 
-                    LazyVGrid(columns: [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)], spacing: 12) {
-                        ForEach(repository.templateLibrary.prefix(2)) { template in
-                            TemplateChoiceCard(template: template, imageURL: { repository.imageURL(for: $0) }) {
-                                onInsert(.template(template))
-                            }
-                        }
-                    }
+                    TemplateEntryCard(locationName: locationProvider.mapDisplayName, action: onTemplates)
                 }
 
                 VStack(alignment: .leading, spacing: 12) {
@@ -5445,6 +6105,54 @@ private struct UniverseMaterialCard: View {
     }
 }
 
+private struct TemplateEntryCard: View {
+    let locationName: String
+    let action: () -> Void
+
+    private var subtitle: String {
+        locationName == "Pick a place"
+            ? "Browse editable city layouts and switch destinations inside Templates."
+            : "Open editable layouts matched to \(locationName)."
+    }
+
+    var body: some View {
+        TrackedEditorToolButton(componentID: "universe.templates.open", disabled: false, action: action) {
+            HStack(spacing: 12) {
+                Image(systemName: "square.grid.2x2")
+                    .font(.system(size: 24, weight: .bold))
+                    .foregroundStyle(Color.paper)
+                    .frame(width: 52, height: 52)
+                    .background(Color.clay)
+                    .clipShape(RoundedRectangle(cornerRadius: 15, style: .continuous))
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Open Templates")
+                        .font(.system(size: 17, weight: .bold, design: .rounded))
+                        .foregroundStyle(Color.ink)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.8)
+
+                    Text(subtitle)
+                        .font(.system(size: 12, weight: .medium, design: .rounded))
+                        .foregroundStyle(Color.inkSoft)
+                        .lineLimit(2)
+                }
+
+                Spacer(minLength: 0)
+
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 15, weight: .bold))
+                    .foregroundStyle(Color.clay)
+            }
+            .padding(14)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Color.paper)
+            .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(Color.bannerSoft, lineWidth: 1.2))
+        }
+    }
+}
+
 private struct UniversePackRow: View {
     let group: MaterialGroup
     let onMaterial: (MaterialItem) -> Void
@@ -5498,7 +6206,6 @@ private enum StoreCategory: String, CaseIterable, Identifiable {
     case brush
     case wordArt
     case backgrounds
-    case templates
 
     var id: String { rawValue }
 
@@ -5511,7 +6218,6 @@ private enum StoreCategory: String, CaseIterable, Identifiable {
         case .brush: return "Brush"
         case .wordArt: return "WordArt"
         case .backgrounds: return "Paper"
-        case .templates: return "Template"
         }
     }
 
@@ -5524,7 +6230,6 @@ private enum StoreCategory: String, CaseIterable, Identifiable {
         case .brush: return "paintbrush.pointed"
         case .wordArt: return "textformat.size"
         case .backgrounds: return "paintpalette"
-        case .templates: return "square.grid.2x2"
         }
     }
 }
@@ -5553,8 +6258,8 @@ private struct CanvasAssetPickerSheet: View {
     let onCancel: () -> Void
 
     private let columns = [
-        GridItem(.flexible(), spacing: 12),
-        GridItem(.flexible(), spacing: 12)
+        GridItem(.flexible(minimum: 0), spacing: 10),
+        GridItem(.flexible(minimum: 0), spacing: 10)
     ]
     @State private var materialSearch = ""
 
@@ -5580,76 +6285,274 @@ private struct CanvasAssetPickerSheet: View {
     }
 
     var body: some View {
-        NavigationStack {
-            ScrollView(showsIndicators: false) {
-                switch sheet {
-                case .templates:
-                    LazyVGrid(columns: columns, spacing: 12) {
-                        ForEach(repository.templateLibrary) { template in
-                            TemplateChoiceCard(template: template, imageURL: { repository.imageURL(for: $0) }) {
-                                onTemplate(template)
-                            }
-                        }
-                    }
-                    .padding(16)
-                case .text:
-                    PresetTextPanel(presets: repository.textPresetLibrary, onPreset: onTextPreset)
+        if sheet == .templates {
+            TemplateCenterView(
+                repository: repository,
+                location: locationProvider.templateLocation,
+                mode: .applyToCanvas,
+                onTemplate: onTemplate,
+                onCancel: onCancel
+            )
+        } else {
+            NavigationStack {
+                ScrollView(showsIndicators: false) {
+                    switch sheet {
+                    case .templates:
+                        EmptyView()
+                    case .text:
+                        PresetTextPanel(presets: repository.textPresetLibrary, onPreset: onTextPreset)
+                            .padding(16)
+                    case .materials:
+                        MaterialPanel(
+                            groups: materialGroups,
+                            allGroups: allMaterialGroups,
+                            locationProvider: locationProvider,
+                            query: $materialSearch,
+                            fallbackStickers: repository.stickerLibrary,
+                            onMaterial: onMaterial,
+                            onSticker: onSticker
+                        )
                         .padding(16)
-                case .materials:
-                    MaterialPanel(
-                        groups: materialGroups,
-                        allGroups: allMaterialGroups,
-                        locationProvider: locationProvider,
-                        query: $materialSearch,
-                        fallbackStickers: repository.stickerLibrary,
-                        onMaterial: onMaterial,
-                        onSticker: onSticker
-                    )
-                    .padding(16)
-                case .stickers:
-                    LazyVGrid(columns: columns, spacing: 12) {
-                        ForEach(repository.stickerLibrary) { sticker in
-                            StickerChoiceCard(sticker: sticker) {
-                                onSticker(sticker)
+                    case .stickers:
+                        LazyVGrid(columns: columns, spacing: 14) {
+                            ForEach(repository.stickerLibrary) { sticker in
+                                StickerChoiceCard(sticker: sticker) {
+                                    onSticker(sticker)
+                                }
                             }
                         }
-                    }
-                    .padding(16)
-                case .shapes:
-                    LazyVGrid(columns: columns, spacing: 12) {
-                        ForEach(repository.shapeLibrary) { shape in
-                            ShapeChoiceCard(shape: shape) {
-                                onShape(shape)
-                            }
-                        }
-                    }
-                    .padding(16)
-                case .backgrounds:
-                    LazyVGrid(columns: columns, spacing: 12) {
-                        ForEach(repository.backgroundLibrary) { background in
-                            BackgroundChoiceCard(background: background, selected: background.colorA == document.background.colorA && background.colorB == document.background.colorB) {
-                                onBackground(background)
-                            }
-                        }
-                    }
-                    .padding(16)
-                case .tapes:
-                    TapePanel(groups: repository.availableTapeGroups, onTape: onTape)
-                    .padding(16)
-                case .brush:
-                    BrushPresetPanel(presets: repository.brushPresetLibrary, onPreset: onBrushPreset)
                         .padding(16)
-                case .wordArt:
-                    PresetTextPanel(presets: repository.wordArtLibrary, onPreset: onTextPreset)
+                    case .shapes:
+                        LazyVGrid(columns: columns, spacing: 12) {
+                            ForEach(repository.shapeLibrary) { shape in
+                                ShapeChoiceCard(shape: shape) {
+                                    onShape(shape)
+                                }
+                            }
+                        }
                         .padding(16)
+                    case .backgrounds:
+                        LazyVGrid(columns: columns, spacing: 12) {
+                            ForEach(repository.backgroundLibrary) { background in
+                                BackgroundChoiceCard(background: background, selected: background.colorA == document.background.colorA && background.colorB == document.background.colorB) {
+                                    onBackground(background)
+                                }
+                            }
+                        }
+                        .padding(16)
+                    case .tapes:
+                        TapePanel(groups: repository.availableTapeGroups, onTape: onTape)
+                        .padding(16)
+                    case .brush:
+                        BrushPresetPanel(presets: repository.brushPresetLibrary, onPreset: onBrushPreset)
+                            .padding(16)
+                    case .wordArt:
+                        PresetTextPanel(presets: repository.wordArtLibrary, onPreset: onTextPreset)
+                            .padding(16)
+                    }
+                }
+                .background(Color.background)
+                .navigationTitle(sheet.title)
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        TrackedEditorToolButton(componentID: "asset.sheet.done", disabled: false, action: onCancel) {
+                            Text("Done")
+                                .font(.system(size: 15, weight: .semibold, design: .rounded))
+                                .foregroundStyle(Color.clay)
+                        }
+                    }
                 }
             }
+        }
+    }
+}
+
+private struct AssetSearchField: View {
+    let placeholder: String
+    @Binding var text: String
+
+    var body: some View {
+        HStack(spacing: 9) {
+            Image(systemName: "magnifyingglass")
+                .font(.system(size: 16, weight: .bold))
+                .foregroundStyle(Color.clay)
+
+            TextField(placeholder, text: $text)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                .font(.system(size: 15, weight: .semibold, design: .rounded))
+                .foregroundStyle(Color.ink)
+
+            if !text.isEmpty {
+                TrackedEditorToolButton(componentID: "asset.search.clear", disabled: false, action: {
+                    text = ""
+                }) {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundStyle(Color.inkSoft)
+                }
+            }
+        }
+        .padding(.horizontal, 12)
+        .frame(height: 48)
+        .frame(maxWidth: .infinity)
+        .background(Color.paper)
+        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Color.bannerSoft, lineWidth: 1.5))
+    }
+}
+
+private enum TemplateCenterMode {
+    case createPage
+    case applyToCanvas
+
+    var title: String {
+        switch self {
+        case .createPage: return "Templates"
+        case .applyToCanvas: return "Add Template"
+        }
+    }
+
+    var actionTitle: String {
+        switch self {
+        case .createPage: return "Start"
+        case .applyToCanvas: return "Apply"
+        }
+    }
+}
+
+private enum TemplateMarketCategory: String, CaseIterable, Identifiable {
+    case hot
+    case my
+    case plan
+    case route
+    case memory
+    case city
+    case all
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .hot: return "Hot"
+        case .my: return "My"
+        case .plan: return "Plan"
+        case .route: return "Route"
+        case .memory: return "Memory"
+        case .city: return "City"
+        case .all: return "All"
+        }
+    }
+
+    var icon: String {
+        switch self {
+        case .hot: return "flame"
+        case .my: return "clock.arrow.circlepath"
+        case .plan: return "checklist"
+        case .route: return "map"
+        case .memory: return "photo.on.rectangle"
+        case .city: return "building.2"
+        case .all: return "square.grid.2x2"
+        }
+    }
+}
+
+private struct TemplateCenterView: View {
+    @ObservedObject var repository: NotebookRepository
+    let location: TemplateLocation
+    let mode: TemplateCenterMode
+    let onTemplate: (PageTemplateDefinition) -> Void
+    let onCancel: () -> Void
+    @AppStorage("travelclip.recentPageTemplateIDs") private var recentTemplateStorage = ""
+    @State private var query = ""
+    @State private var selectedCategory: TemplateMarketCategory = .hot
+
+    private let columns = [
+        GridItem(.flexible(minimum: 0), spacing: 10),
+        GridItem(.flexible(minimum: 0), spacing: 10)
+    ]
+
+    private var baseTemplates: [PageTemplateDefinition] {
+        PageTemplateLibrary.builtIn
+    }
+
+    private var recentTemplateIDs: [String] {
+        recentTemplateStorage
+            .split(separator: "|")
+            .map(String.init)
+    }
+
+    private var templates: [PageTemplateDefinition] {
+        let categoryFiltered: [PageTemplateDefinition]
+        switch selectedCategory {
+        case .hot:
+            categoryFiltered = PageTemplateLibrary.templates(matching: location, scope: .recommended)
+        case .my:
+            categoryFiltered = recentTemplateIDs.compactMap { id in
+                baseTemplates.first { $0.id == id }
+            }
+        case .plan:
+            categoryFiltered = baseTemplates.filter(\.isPlanTemplate)
+        case .route:
+            categoryFiltered = baseTemplates.filter(\.isRouteTemplate)
+        case .memory:
+            categoryFiltered = baseTemplates.filter(\.isMemoryTemplate)
+        case .city:
+            categoryFiltered = baseTemplates.filter(\.isCityTemplate)
+        case .all:
+            categoryFiltered = baseTemplates
+        }
+
+        return filter(categoryFiltered, matching: query)
+    }
+
+    private var resultSummary: String {
+        let count = templates.count
+        if selectedCategory == .my && recentTemplateIDs.isEmpty {
+            return "Recently used templates will appear here."
+        }
+        return "\(count) \(count == 1 ? "template" : "templates")"
+    }
+
+    var body: some View {
+        NavigationStack {
+            ScrollView(showsIndicators: false) {
+                VStack(alignment: .leading, spacing: 12) {
+                    templateHeader
+
+                    categoryStrip
+
+                    AssetSearchField(placeholder: "Search city, tag, or template", text: $query)
+
+                    browserSummary
+
+                    if templates.isEmpty {
+                        ContentUnavailableView(
+                            selectedCategory == .my ? "No recent templates" : "No Templates found",
+                            systemImage: selectedCategory == .my ? "clock" : "magnifyingglass",
+                            description: Text(selectedCategory == .my ? "Use a template once to add it to My." : "Try All, 广州, Guangzhou, 早茶, or 珠江.")
+                        )
+                            .foregroundStyle(Color.inkSoft)
+                            .padding(.vertical, 24)
+                    } else {
+                        LazyVGrid(columns: columns, spacing: 10) {
+                            ForEach(templates) { template in
+                                TemplateMarketCard(template: template, imageURL: { repository.imageURL(for: $0) }, actionTitle: mode.actionTitle) {
+                                    useTemplate(template)
+                                }
+                            }
+                        }
+                    }
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 14)
+            }
             .background(Color.background)
-            .navigationTitle(sheet.title)
+            .navigationTitle(mode.title)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
-                    TrackedEditorToolButton(componentID: "asset.sheet.done", disabled: false, action: onCancel) {
+                    TrackedEditorToolButton(componentID: "template.center.done", disabled: false, action: onCancel) {
                         Text("Done")
                             .font(.system(size: 15, weight: .semibold, design: .rounded))
                             .foregroundStyle(Color.clay)
@@ -5658,31 +6561,170 @@ private struct CanvasAssetPickerSheet: View {
             }
         }
     }
+
+    private func filter(_ templates: [PageTemplateDefinition], matching query: String) -> [PageTemplateDefinition] {
+        let normalizedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !normalizedQuery.isEmpty else { return templates }
+        return templates.filter { template in
+            template.searchTokens.contains { $0.lowercased().contains(normalizedQuery) }
+        }
+    }
+
+    private func useTemplate(_ template: PageTemplateDefinition) {
+        var ids = recentTemplateIDs.filter { $0 != template.id }
+        ids.insert(template.id, at: 0)
+        recentTemplateStorage = ids.prefix(8).joined(separator: "|")
+        onTemplate(template)
+    }
+
+    private var templateHeader: some View {
+        VStack(alignment: .leading, spacing: 5) {
+            HStack(spacing: 10) {
+                Image(systemName: "square.grid.2x2")
+                    .font(.system(size: 18, weight: .bold))
+                    .foregroundStyle(Color.clay)
+                    .frame(width: 38, height: 38)
+                    .background(Color.paper)
+                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).stroke(Color.lineSoft, lineWidth: 1.1))
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Template Center")
+                        .font(.system(size: 24, weight: .bold, design: .serif))
+                        .foregroundStyle(Color.ink)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.82)
+
+                    Text("Editable travel layouts for \(location.displayName)")
+                        .font(.system(size: 13, weight: .medium, design: .rounded))
+                        .foregroundStyle(Color.inkSoft)
+                        .lineLimit(2)
+                }
+
+                Spacer(minLength: 0)
+            }
+        }
+    }
+
+    private var categoryStrip: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                ForEach(TemplateMarketCategory.allCases) { category in
+                    TrackedEditorToolButton(componentID: "template.center.category.\(category.rawValue)", disabled: false, action: {
+                        selectedCategory = category
+                    }) {
+                        VStack(spacing: 4) {
+                            Image(systemName: category.icon)
+                                .font(.system(size: 15, weight: .bold))
+                                .frame(width: 40, height: 29)
+                                .foregroundStyle(selectedCategory == category ? Color.paper : Color.clay)
+                                .background(selectedCategory == category ? Color.clay : Color.paper)
+                                .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+                                .overlay(RoundedRectangle(cornerRadius: 9, style: .continuous).stroke(Color.lineSoft, lineWidth: selectedCategory == category ? 0 : 1))
+
+                            Text(category.title)
+                                .font(.system(size: 11, weight: .bold, design: .rounded))
+                                .foregroundStyle(Color.clay)
+                            .lineLimit(1)
+                                .minimumScaleFactor(0.75)
+                                .frame(width: 48)
+                        }
+                        .frame(width: 52)
+                    }
+                }
+            }
+            .padding(.vertical, 2)
+        }
+    }
+
+    private var browserSummary: some View {
+        HStack(spacing: 8) {
+            Text(selectedCategory.title)
+                .font(.system(size: 18, weight: .bold, design: .serif))
+                .foregroundStyle(Color.ink)
+
+            Text(resultSummary)
+                .font(.system(size: 11, weight: .bold, design: .rounded))
+                .foregroundStyle(Color.inkSoft)
+                .lineLimit(1)
+
+            Spacer(minLength: 0)
+        }
+    }
 }
 
-private struct TemplateChoiceCard: View {
+private struct TemplateMarketCard: View {
     let template: PageTemplateDefinition
     let imageURL: (String?) -> URL?
+    var actionTitle = "Use"
     let action: () -> Void
 
     var body: some View {
         TrackedEditorToolButton(componentID: "asset.template.\(telemetryIDSegment(template.id))", disabled: false, action: action) {
-            VStack(alignment: .leading, spacing: 8) {
-                CanvasTemplatePreview(template: template, imageURL: imageURL)
-                    .aspectRatio(0.72, contentMode: .fit)
-                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                    .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(Color.lineSoft, lineWidth: 1.2))
+            VStack(alignment: .leading, spacing: 6) {
+                ZStack(alignment: .bottomTrailing) {
+                    CanvasTemplatePreview(template: template, imageURL: imageURL)
+                        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                        .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).stroke(Color.lineSoft, lineWidth: 0.8))
+
+                    Text(template.templateUseCaseLabel)
+                        .font(.system(size: 9, weight: .heavy, design: .rounded))
+                        .foregroundStyle(Color.paper)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.75)
+                        .padding(.horizontal, 7)
+                        .frame(height: 22)
+                        .background(Color.ink.opacity(0.82))
+                        .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+                        .padding(5)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+
+                    Image(systemName: modeIcon)
+                        .font(.system(size: 11, weight: .bold))
+                        .foregroundStyle(Color.paper)
+                        .frame(width: 24, height: 24)
+                        .background(Color.clay.opacity(0.94))
+                        .clipShape(Circle())
+                        .overlay(Circle().stroke(Color.paper, lineWidth: 1.8))
+                        .padding(5)
+                        .accessibilityLabel(actionTitle)
+                }
 
                 Text(template.title)
-                    .font(.system(size: 13, weight: .semibold, design: .rounded))
+                    .font(.system(size: 12, weight: .bold, design: .rounded))
                     .foregroundStyle(Color.ink)
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.68)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                Text(template.templateOutcomeLabel)
+                    .font(.system(size: 9.5, weight: .semibold, design: .rounded))
+                    .foregroundStyle(Color.inkSoft)
                     .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+
+                HStack(spacing: 5) {
+                    Label(template.travelMomentLabel, systemImage: template.travelMomentIcon)
+                    Text("·")
+                    Text(template.workflowLabel)
+                    Text("·")
+                    Text(template.marketMetadata)
+                }
+                .font(.system(size: 8.5, weight: .bold, design: .rounded))
+                .foregroundStyle(Color.inkSoft.opacity(0.86))
+                .lineLimit(1)
+                .minimumScaleFactor(0.68)
             }
-            .padding(10)
+            .padding(5)
+            .frame(maxWidth: .infinity, alignment: .topLeading)
             .background(Color.paper)
-            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(Color.lineSoft, lineWidth: 1.1))
+            .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 9, style: .continuous).stroke(Color.lineSoft, lineWidth: 0.9))
         }
+    }
+
+    private var modeIcon: String {
+        actionTitle == "Apply" ? "plus" : "arrow.right"
     }
 }
 
@@ -5745,15 +6787,6 @@ private struct TextPresetChoiceCard: View {
     }
 
     private var textForeground: some ShapeStyle {
-        if preset.kind == .wordArt {
-            return AnyShapeStyle(
-                LinearGradient(
-                    colors: [Color(hex: preset.style.colorHex), Color.sand, Color.paper],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                )
-            )
-        }
         return AnyShapeStyle(Color(hex: preset.style.colorHex))
     }
 }
@@ -6722,33 +7755,27 @@ private struct CanvasTemplatePreview: View {
     let template: PageTemplateDefinition
     let imageURL: (String?) -> URL?
 
-    private let previewWidth: CGFloat = 132
-    private var previewHeight: CGFloat {
-        previewWidth * CanvasDocument.designCanvasSize.height / CanvasDocument.designCanvasSize.width
-    }
-
-    private var previewSize: CGSize {
-        CGSize(width: previewWidth, height: previewHeight)
-    }
-
-    private var previewTransform: CanvasViewportTransform {
-        CanvasViewportTransform(documentSize: CanvasDocument.designCanvasSize.cgSize, viewportSize: previewSize)
+    private var aspectRatio: CGFloat {
+        CanvasDocument.designCanvasSize.width / CanvasDocument.designCanvasSize.height
     }
 
     var body: some View {
-        ZStack {
-            CanvasSurface(background: template.background)
-                .frame(width: previewWidth, height: previewHeight)
+        GeometryReader { proxy in
+            let width = proxy.size.width
+            let height = width / aspectRatio
+            let previewSize = CGSize(width: width, height: height)
 
-            ForEach(template.elements.sorted { $0.zIndex < $1.zIndex }) { element in
-                CanvasElementView(element: previewTransform.displayElement(element), selected: false, imageURL: imageURL)
-                    .rotationEffect(.degrees(element.rotation))
-                    .position(previewTransform.displayPoint(CGPoint(x: element.x, y: element.y)))
-                    .opacity(element.opacity)
-            }
+            CanvasPreviewContent(
+                background: template.background,
+                elements: PageTemplateApplier.polishedElements(for: template),
+                documentSize: CanvasDocument.designCanvasSize.cgSize,
+                viewportSize: previewSize,
+                imageURL: imageURL
+            )
+            .frame(width: width, height: height)
         }
         .frame(maxWidth: .infinity)
-        .frame(height: previewHeight)
+        .aspectRatio(aspectRatio, contentMode: .fit)
     }
 }
 
@@ -7119,7 +8146,7 @@ private struct TapeStoreShelfItem: View {
     }
 }
 
-private struct EditorToolPanel<PhotoPicker: View>: View {
+private struct EditorToolPanel<PhotoPicker: View, ReplacePhotoPicker: View>: View {
     let activePanel: EditorPanel
     @Binding var selectedShelf: EditorToolShelf
     let document: CanvasDocument?
@@ -7176,8 +8203,6 @@ private struct EditorToolPanel<PhotoPicker: View>: View {
     let onMatchSize: () -> Void
     let onApplyStyle: () -> Void
     let onDuplicate: () -> Void
-    let onGroup: () -> Void
-    let onUngroup: () -> Void
     let snapToGrid: Bool
     let onToggleSnap: () -> Void
     let activeCanvasTool: ActiveCanvasTool?
@@ -7191,6 +8216,7 @@ private struct EditorToolPanel<PhotoPicker: View>: View {
     let onOpenBrushLibrary: () -> Void
     let onExitToolMode: () -> Void
     @ViewBuilder let photoPicker: () -> PhotoPicker
+    @ViewBuilder let replacePhotoPicker: () -> ReplacePhotoPicker
 
     private var selectedElement: CanvasElement? {
         document?.elements.first { $0.id == selectedElementID }
@@ -7208,15 +8234,6 @@ private struct EditorToolPanel<PhotoPicker: View>: View {
         selectedElementIDs.count > 2
     }
 
-    private var canGroup: Bool {
-        selectedElementIDs.count > 1
-    }
-
-    private var canUngroup: Bool {
-        guard let document else { return false }
-        return document.elements.contains { selectedElementIDs.contains($0.id) && $0.groupID != nil }
-    }
-
     private var canEditSelectedElement: Bool {
         guard let selectedElement, selectedElementIDs.count == 1, !selectedElement.locked else { return false }
         return selectedElement.kind == .text || selectedElement.kind == .wordArt || selectedElement.kind == .link
@@ -7230,6 +8247,11 @@ private struct EditorToolPanel<PhotoPicker: View>: View {
     private var canShareSelectedObject: Bool {
         guard let selectedElement, selectedElementIDs.count == 1 else { return false }
         return selectedElement.kind.isShareableAttachment
+    }
+
+    private var canReplaceSelectedImage: Bool {
+        guard let selectedElement, selectedElementIDs.count == 1 else { return false }
+        return selectedElement.kind == .image && !selectedElement.locked
     }
 
     private var openObjectTitle: String {
@@ -7463,11 +8485,12 @@ private struct EditorToolPanel<PhotoPicker: View>: View {
     @ViewBuilder
     private var objectTools: some View {
         toolButton(openObjectIcon, openObjectTitle, disabled: !canOpenSelectedObject, action: onOpenObject)
+        if canReplaceSelectedImage {
+            replacePhotoPicker()
+        }
         toolButton("square.and.arrow.up", "Share", disabled: !canShareSelectedObject, action: onShareObject)
         toolButton(selectedElement?.note?.isEmpty == false ? "note.text" : "note.text.badge.plus", "Note", disabled: !canNoteSelectedElement, action: onNote)
         toolButton("plus.square.on.square", "Duplicate", disabled: !hasSelection, action: onDuplicate)
-        toolButton("rectangle.3.group", "Group", disabled: !canGroup, action: onGroup)
-        toolButton("rectangle.split.3x1", "Ungroup", disabled: !canUngroup, action: onUngroup)
         layerButton("arrow.up.square", "Forward", action: onBringForward)
         layerButton("arrow.down.square", "Backward", action: onSendBackward)
         layerButton("eye", selectedElement?.hidden == true ? "Show" : "Hide", action: onToggleHidden)
@@ -7506,7 +8529,7 @@ private struct EditorToolPanel<PhotoPicker: View>: View {
     }
 
     private func layerButton(_ icon: String, _ title: String, action: @escaping () -> Void) -> some View {
-        toolButton(icon, title, disabled: selectedElementID == nil, action: action)
+        toolButton(icon, title, disabled: !hasSelection, action: action)
     }
 
     private func toolButton(_ icon: String, _ title: String, disabled: Bool = false, active: Bool = false, action: @escaping () -> Void) -> some View {
@@ -8463,213 +9486,458 @@ private struct TextInputSheet: View {
     let mode: TextInsertMode
     let onConfirm: () -> String?
     @FocusState private var focused: Bool
+    @AppStorage("travelclip.recentTextFonts") private var recentFontStorage = ""
     @StateObject private var fontLibrary = FontLibrary()
     @State private var fontStatus = ""
     @State private var validationMessage = ""
     @State private var previewImage: UIImage?
-    private let systemFontOptions = ["Georgia", "Avenir Next", "Courier New", "Menlo", "Didot", "Papyrus", "Snell Roundhand", "Gill Sans", "Palatino", "Charter"]
+    @State private var selectedTab: TextStyleTab = .input
+    private let systemFontOptions = ["Georgia", "Avenir Next", "Courier New", "Menlo", "Didot", "Papyrus", "Snell Roundhand", "Gill Sans", "Palatino", "Charter", "PingFang SC", "Songti SC", "Kaiti SC", "STHeiti", "Hiragino Sans"]
     private let googleFontOptions = ["Roboto", "Open Sans", "Montserrat", "Merriweather", "Playfair Display", "Dancing Script", "Pacifico"]
-    private let colorOptions = ["#2E2824", "#C4563F", "#7AA08C", "#A9C0D2", "#B77255", "#111827"]
-    private var allFontOptions: [String] {
-        systemFontOptions + googleFontOptions
+    private let colorOptions = ["#2E2824", "#B77255", "#7AA08C", "#A9C0D2", "#D1B890", "#D99A8C", "#FDFBF5", "#111827"]
+    private var previewText: String {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmed.isEmpty {
+            return trimmed
+        }
+        return mode == .wordArt ? "Travel" : "Travel note"
+    }
+    private var recentFontOptions: [FontOption] {
+        recentFonts.map { FontOption(name: $0, source: .recent) }
+    }
+    private var systemOptions: [FontOption] {
+        systemFontOptions
+            .filter { !recentFonts.contains($0) }
+            .map { FontOption(name: $0, source: .system) }
+    }
+    private var googleOptions: [FontOption] {
+        googleFontOptions
+            .filter { !recentFonts.contains($0) }
+            .map { FontOption(name: $0, source: .google) }
+    }
+    private var recentFonts: [String] {
+        recentFontStorage
+            .split(separator: "|")
+            .map(String.init)
+            .filter { systemFontOptions.contains($0) || googleFontOptions.contains($0) }
     }
 
     var body: some View {
-        ScrollView(showsIndicators: false) {
-            VStack(alignment: .leading, spacing: 16) {
-                HStack(alignment: .center) {
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text(mode == .wordArt ? "WordArt" : "Text")
-                            .font(.system(size: 25, weight: .bold, design: .serif))
-                            .foregroundStyle(Color.ink)
+        VStack(spacing: 0) {
+            header
+                .padding(.horizontal, 22)
+                .padding(.top, 20)
+                .padding(.bottom, 14)
 
-                        Text(style.fontName)
-                            .font(.system(size: 12, weight: .semibold, design: .rounded))
-                            .foregroundStyle(Color.inkSoft)
-                            .lineLimit(1)
-                    }
-
-                    Spacer()
-
-                    TrackedEditorToolButton(componentID: "sheet.text.confirm", disabled: false, action: {
-                        validationMessage = onConfirm() ?? ""
-                    }) {
-                        Text(mode == .wordArt ? "Add" : "Done")
-                            .font(.system(size: 15, weight: .bold, design: .rounded))
-                            .foregroundStyle(Color.paper)
-                            .padding(.horizontal, 18)
-                            .frame(height: 38)
-                            .background(Color.clay)
-                            .clipShape(Capsule())
-                    }
-                }
-
-                TextRenderPreview(image: previewImage)
-                    .onAppear {
-                        refreshPreview()
-                    }
-                    .onChange(of: text) { _, _ in
-                        refreshPreview()
-                    }
-                    .onChange(of: style.fontName) { _, _ in
-                        recordStyleChange("font")
-                        refreshPreview()
-                    }
-                    .onChange(of: style.fontSize) { _, _ in
-                        recordStyleChange("size")
-                        refreshPreview()
-                    }
-                    .onChange(of: style.colorHex) { _, _ in
-                        refreshPreview()
-                    }
-                    .onChange(of: style.bold) { _, _ in
-                        recordStyleChange("bold")
-                        refreshPreview()
-                    }
-                    .onChange(of: style.italic) { _, _ in
-                        recordStyleChange("italic")
-                        refreshPreview()
-                    }
-                    .onChange(of: style.alignment) { _, _ in
-                        recordStyleChange("align")
-                        refreshPreview()
-                    }
-                    .onChange(of: style.width) { _, _ in
-                        recordStyleChange("width")
-                        refreshPreview()
-                    }
-
-                TextEditor(text: $text)
-                    .focused($focused)
-                    .font(FontResolver.swiftUIFont(name: style.fontName, size: 20, bold: style.bold, italic: style.italic))
-                    .foregroundStyle(Color(hex: style.colorHex))
-                    .multilineTextAlignment(style.alignment == "leading" ? .leading : (style.alignment == "trailing" ? .trailing : .center))
-                    .scrollContentBackground(.hidden)
-                    .padding(14)
-                    .frame(height: 148)
-                    .background(Color.paper)
-                    .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
-                    .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(Color.lineSoft, lineWidth: 1.2))
-                    .onChange(of: text) { _, _ in
-                        validationMessage = ""
-                    }
-
-                if !validationMessage.isEmpty {
-                    Label(validationMessage, systemImage: "exclamationmark.triangle.fill")
-                        .font(.system(size: 12, weight: .semibold, design: .rounded))
-                        .foregroundStyle(Color.red)
-                }
-
-                VStack(alignment: .leading, spacing: 12) {
-                    HStack {
-                        Label("Font", systemImage: "textformat")
-                            .font(.system(size: 13, weight: .bold, design: .rounded))
-                            .foregroundStyle(Color.ink)
-
-                        Spacer()
-
-                        Picker("Font", selection: $style.fontName) {
-                            Section("System") {
-                                ForEach(systemFontOptions, id: \.self) { font in
-                                    Text(font)
-                                        .font(FontResolver.swiftUIFont(name: font, size: 18, bold: false, italic: false))
-                                        .tag(font)
-                                }
-                            }
-
-                            Section("Google Fonts") {
-                                ForEach(googleFontOptions, id: \.self) { font in
-                                    Text(font)
-                                        .font(FontResolver.swiftUIFont(name: fontLibrary.resolvedName(for: font), size: 18, bold: false, italic: false))
-                                        .tag(font)
-                                }
-                            }
-                        }
-                        .pickerStyle(.menu)
-                        .onChange(of: style.fontName) { _, font in
-                            loadGoogleFontIfNeeded(font)
-                        }
-                    }
-
-                    if !fontStatus.isEmpty {
-                        Text(fontStatus)
-                            .font(.system(size: 11, weight: .medium, design: .rounded))
-                            .foregroundStyle(Color.inkSoft)
-                    }
-                }
-                .padding(14)
-                .background(Color.paper.opacity(0.8))
-                .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-                .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Color.lineSoft, lineWidth: 1.1))
-
-                VStack(spacing: 12) {
-                    sliderRow(title: "Size", value: $style.fontSize, range: 32...160, step: 2)
-                    sliderRow(title: "Width", value: $style.width, range: 360...920, step: 20)
-                }
-                .padding(14)
-                .background(Color.paper.opacity(0.8))
-                .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-                .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Color.lineSoft, lineWidth: 1.1))
-
-                HStack(spacing: 10) {
-                    Toggle("B", isOn: $style.bold)
-                        .toggleStyle(.button)
-                    Toggle("I", isOn: $style.italic)
-                        .toggleStyle(.button)
-
-                    Picker("Align", selection: $style.alignment) {
-                        Image(systemName: "text.alignleft").tag("leading")
-                        Image(systemName: "text.aligncenter").tag("center")
-                        Image(systemName: "text.alignright").tag("trailing")
-                    }
-                    .pickerStyle(.segmented)
-                }
-
-                HStack(spacing: 10) {
-                    ForEach(colorOptions, id: \.self) { colorHex in
-                        TrackedEditorToolButton(componentID: "sheet.text.color.\(colorHex.replacingOccurrences(of: "#", with: ""))", disabled: false, action: {
-                            style.colorHex = colorHex
-                        }) {
-                            Circle()
-                                .fill(Color(hex: colorHex))
-                                .frame(width: 31, height: 31)
-                                .overlay(Circle().stroke(style.colorHex == colorHex ? Color.clay : Color.lineSoft, lineWidth: style.colorHex == colorHex ? 3 : 1))
-                        }
-                    }
-                }
-
-                HStack {
-                    TrackedEditorToolButton(componentID: "sheet.text.clear", disabled: false, action: {
-                        text = ""
-                    }) {
-                        Text("Clear")
-                            .font(.system(size: 16, weight: .medium, design: .rounded))
-                            .foregroundStyle(Color.inkSoft)
-                    }
-
-                    Spacer()
-                }
+            VStack(spacing: 12) {
+                textEditor
+                TextRenderPreview(image: previewImage, style: style)
             }
-            .padding(22)
+            .padding(.horizontal, 22)
+
+            ScrollView(showsIndicators: false) {
+                activePanel
+                    .padding(.horizontal, 22)
+                    .padding(.top, 14)
+                    .padding(.bottom, 14)
+            }
+            .frame(maxHeight: 260)
+
+            bottomToolbar
+                .padding(.horizontal, 16)
+                .padding(.top, 10)
+                .padding(.bottom, 16)
+                .background(Color.paper.opacity(0.96))
+                .overlay(Rectangle().fill(Color.lineSoft).frame(height: 1), alignment: .top)
         }
         .background(Color.background)
         .onAppear {
             focused = true
             style.text = text
             fontLibrary.bootstrap()
+            rememberFont(style.fontName)
             loadGoogleFontIfNeeded(style.fontName)
+            refreshPreview()
+        }
+        .onChange(of: text) { _, _ in
+            validationMessage = ""
+            refreshPreview()
+        }
+        .onChange(of: style.fontName) { _, _ in
+            recordStyleChange("font")
+            rememberFont(style.fontName)
+            loadGoogleFontIfNeeded(style.fontName)
+            refreshPreview()
+        }
+        .onChange(of: style.fontSize) { _, _ in
+            recordStyleChange("size")
+            refreshPreview()
+        }
+        .onChange(of: style.colorHex) { _, _ in refreshPreview() }
+        .onChange(of: style.backgroundHex) { _, _ in refreshPreview() }
+        .onChange(of: style.strokeHex) { _, _ in refreshPreview() }
+        .onChange(of: style.strokeWidth) { _, _ in refreshPreview() }
+        .onChange(of: style.shadowColorHex) { _, _ in refreshPreview() }
+        .onChange(of: style.opacity) { _, _ in refreshPreview() }
+        .onChange(of: style.bold) { _, _ in
+            recordStyleChange("bold")
+            refreshPreview()
+        }
+        .onChange(of: style.italic) { _, _ in
+            recordStyleChange("italic")
+            refreshPreview()
+        }
+        .onChange(of: style.alignment) { _, _ in
+            recordStyleChange("align")
+            refreshPreview()
+        }
+        .onChange(of: style.width) { _, _ in
+            recordStyleChange("width")
             refreshPreview()
         }
     }
 
     private func refreshPreview() {
         var previewStyle = style
-        previewStyle.text = text
-        previewImage = TextRenderService.sampleImage(text: text, style: previewStyle, scale: 2)
+        previewStyle.text = previewText
+        previewImage = TextRenderService.sampleImage(text: previewText, style: previewStyle, fallbackText: previewText, scale: 2)
+    }
+
+    private var header: some View {
+        HStack(alignment: .center) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(mode == .wordArt ? "WordArt" : "Text")
+                    .font(.system(size: 25, weight: .bold, design: .serif))
+                    .foregroundStyle(Color.ink)
+
+                Text(style.fontName)
+                    .font(.system(size: 12, weight: .semibold, design: .rounded))
+                    .foregroundStyle(Color.inkSoft)
+                    .lineLimit(1)
+            }
+
+            Spacer()
+
+            TrackedEditorToolButton(componentID: "sheet.text.confirm", disabled: false, action: {
+                style.text = text
+                validationMessage = onConfirm() ?? ""
+            }) {
+                Text(mode == .wordArt ? "Add" : "Done")
+                    .font(.system(size: 15, weight: .bold, design: .rounded))
+                    .foregroundStyle(Color.paper)
+                    .padding(.horizontal, 18)
+                    .frame(height: 38)
+                    .background(Color.clay)
+                    .clipShape(Capsule())
+            }
+        }
+    }
+
+    private var textEditor: some View {
+        VStack(alignment: .leading, spacing: 9) {
+            TextEditor(text: $text)
+                .focused($focused)
+                .font(FontResolver.swiftUIFont(name: style.fontName, size: 22, bold: style.bold, italic: style.italic))
+                .foregroundStyle(Color(hex: style.colorHex))
+                .multilineTextAlignment(style.alignment == "leading" ? .leading : (style.alignment == "trailing" ? .trailing : .center))
+                .scrollContentBackground(.hidden)
+                .padding(14)
+                .frame(minHeight: 170, maxHeight: 230)
+                .background(Color.paper)
+                .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(Color.lineSoft, lineWidth: 1.2))
+
+            if !validationMessage.isEmpty {
+                Label(validationMessage, systemImage: "exclamationmark.triangle.fill")
+                    .font(.system(size: 12, weight: .semibold, design: .rounded))
+                    .foregroundStyle(Color.red)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var activePanel: some View {
+        switch selectedTab {
+        case .input:
+            inputPanel
+        case .color:
+            colorPanel
+        case .font:
+            fontPanel
+        case .format:
+            formatPanel
+        }
+    }
+
+    private var bottomToolbar: some View {
+        VStack(spacing: 10) {
+            HStack(spacing: 8) {
+                ForEach(TextStyleTab.allCases, id: \.self) { tab in
+                    TrackedEditorToolButton(componentID: "sheet.text.tab.\(tab.rawValue)", disabled: false, action: {
+                        selectTab(tab)
+                    }) {
+                        VStack(spacing: 4) {
+                            Image(systemName: tab.icon)
+                                .font(.system(size: 16, weight: .bold))
+                            Text(tab.title)
+                                .font(.system(size: 10, weight: .bold, design: .rounded))
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.7)
+                        }
+                        .foregroundStyle(selectedTab == tab ? Color.paper : Color.inkSoft)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 48)
+                        .background(selectedTab == tab ? Color.clay : Color.paper)
+                        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(selectedTab == tab ? Color.clay : Color.lineSoft, lineWidth: 1))
+                    }
+                }
+            }
+
+            HStack(spacing: 12) {
+                sizeButton(systemName: "minus", delta: -2)
+                Text("\(Int(style.fontSize))")
+                    .font(.system(size: 15, weight: .bold, design: .rounded))
+                    .foregroundStyle(Color.ink)
+                    .frame(width: 52, height: 34)
+                    .background(Color.background)
+                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).stroke(Color.lineSoft, lineWidth: 1))
+                sizeButton(systemName: "plus", delta: 2)
+                sliderRow(title: "Width", value: $style.width, range: 360...920, step: 20)
+            }
+        }
+    }
+
+    private func selectTab(_ tab: TextStyleTab) {
+        selectedTab = tab
+        focused = tab == .input
+    }
+
+    private var inputPanel: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            panelHeader("Input", systemImage: "keyboard")
+
+            HStack {
+                TrackedEditorToolButton(componentID: "sheet.text.focus", disabled: false, action: {
+                    focused = true
+                }) {
+                    Label("Edit text", systemImage: "cursorarrow.click")
+                        .font(.system(size: 13, weight: .bold, design: .rounded))
+                        .foregroundStyle(Color.clay)
+                }
+
+                Spacer()
+
+                TrackedEditorToolButton(componentID: "sheet.text.clear", disabled: false, action: {
+                    text = ""
+                    focused = true
+                }) {
+                    Text("Clear")
+                        .font(.system(size: 13, weight: .bold, design: .rounded))
+                        .foregroundStyle(Color.inkSoft)
+                }
+            }
+
+            sliderRow(title: "Size", value: $style.fontSize, range: 32...160, step: 2)
+        }
+        .textPanelStyle()
+    }
+
+    private var colorPanel: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            panelHeader("Color", systemImage: "paintpalette")
+            colorPickerRow(title: "Text", selection: Binding(get: { style.colorHex }, set: { style.colorHex = $0 }))
+            optionalColorPickerRow(title: "Background", selection: $style.backgroundHex, fallback: "#FDFBF5")
+            colorPickerRow(title: "Stroke", selection: Binding(get: { style.strokeHex }, set: { style.strokeHex = $0 }))
+            colorPickerRow(title: "Shadow", selection: Binding(get: { style.shadowColorHex }, set: { style.shadowColorHex = $0; style.shadowEnabled = true }))
+            percentSliderRow(title: "Opacity", value: Binding(get: { CGFloat(style.opacity) }, set: { style.opacity = Double($0) }), range: 0.2...1, step: 0.05)
+        }
+        .textPanelStyle()
+    }
+
+    private var fontPanel: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            panelHeader("Font", systemImage: "textformat")
+
+            if !recentFontOptions.isEmpty {
+                fontSection(title: "Recent", options: recentFontOptions)
+            }
+
+            fontSection(title: "System", options: systemOptions)
+            fontSection(title: "Google Fonts", options: googleOptions)
+
+            if !fontStatus.isEmpty {
+                Text(fontStatus)
+                    .font(.system(size: 11, weight: .medium, design: .rounded))
+                    .foregroundStyle(Color.inkSoft)
+            }
+        }
+        .textPanelStyle()
+    }
+
+    private var formatPanel: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            panelHeader("Format", systemImage: "text.alignleft")
+
+            HStack(spacing: 10) {
+                formatToggle(title: "B", systemName: "bold", isOn: $style.bold)
+                formatToggle(title: "I", systemName: "italic", isOn: $style.italic)
+
+                Picker("Align", selection: $style.alignment) {
+                    Image(systemName: "text.alignleft").tag("leading")
+                    Image(systemName: "text.aligncenter").tag("center")
+                    Image(systemName: "text.alignright").tag("trailing")
+                }
+                .pickerStyle(.segmented)
+            }
+
+            HStack(spacing: 10) {
+                switchButton(title: "Background", isOn: Binding(get: { style.backgroundHex != nil }, set: { style.backgroundHex = $0 ? (style.backgroundHex ?? "#FDFBF5") : nil }))
+                switchButton(title: "Shadow", isOn: $style.shadowEnabled)
+                switchButton(title: "Stroke", isOn: Binding(get: { style.strokeWidth > 0 }, set: { style.strokeWidth = $0 ? max(style.strokeWidth, 3) : 0 }))
+            }
+
+            sliderRow(title: "Stroke", value: $style.strokeWidth, range: 0...14, step: 1)
+        }
+        .textPanelStyle()
     }
 
     private func recordStyleChange(_ component: String) {
         InteractionTelemetry.recordAction(componentID: "sheet.text.\(component)", disabled: false)
+    }
+
+    private func fontSection(title: String, options: [FontOption]) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(title)
+                .font(.system(size: 11, weight: .bold, design: .rounded))
+                .foregroundStyle(Color.inkSoft)
+                .textCase(.uppercase)
+
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 10) {
+                    ForEach(options) { option in
+                        FontOptionCard(
+                            option: option,
+                            previewText: previewText,
+                            isSelected: style.fontName == option.name,
+                            resolvedName: resolvedFontName(for: option.name),
+                            statusText: statusText(for: option.name)
+                        ) {
+                            style.fontName = option.name
+                        }
+                    }
+                }
+                .padding(.vertical, 2)
+            }
+        }
+    }
+
+    private func panelHeader(_ title: String, systemImage: String) -> some View {
+        Label(title, systemImage: systemImage)
+            .font(.system(size: 13, weight: .bold, design: .rounded))
+            .foregroundStyle(Color.ink)
+    }
+
+    private func colorPickerRow(title: String, selection: Binding<String>) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(title)
+                .font(.system(size: 11, weight: .bold, design: .rounded))
+                .foregroundStyle(Color.inkSoft)
+                .textCase(.uppercase)
+
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 10) {
+                    ForEach(colorOptions, id: \.self) { colorHex in
+                        colorSwatch(colorHex: colorHex, selected: selection.wrappedValue == colorHex) {
+                            selection.wrappedValue = colorHex
+                        }
+                    }
+                }
+                .padding(.vertical, 2)
+            }
+        }
+    }
+
+    private func optionalColorPickerRow(title: String, selection: Binding<String?>, fallback: String) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text(title)
+                    .font(.system(size: 11, weight: .bold, design: .rounded))
+                    .foregroundStyle(Color.inkSoft)
+                    .textCase(.uppercase)
+
+                Spacer()
+
+                switchButton(title: selection.wrappedValue == nil ? "Off" : "On", isOn: Binding(get: { selection.wrappedValue != nil }, set: { selection.wrappedValue = $0 ? (selection.wrappedValue ?? fallback) : nil }))
+            }
+
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 10) {
+                    ForEach(colorOptions, id: \.self) { colorHex in
+                        colorSwatch(colorHex: colorHex, selected: selection.wrappedValue == colorHex) {
+                            selection.wrappedValue = colorHex
+                        }
+                    }
+                }
+                .padding(.vertical, 2)
+            }
+            .opacity(selection.wrappedValue == nil ? 0.45 : 1)
+        }
+    }
+
+    private func colorSwatch(colorHex: String, selected: Bool, action: @escaping () -> Void) -> some View {
+        TrackedEditorToolButton(componentID: "sheet.text.color.\(colorHex.replacingOccurrences(of: "#", with: ""))", disabled: false, action: action) {
+            Circle()
+                .fill(Color(hex: colorHex))
+                .frame(width: 31, height: 31)
+                .overlay(Circle().stroke(selected ? Color.clay : Color.lineSoft, lineWidth: selected ? 3 : 1))
+                .overlay(Circle().stroke(Color.paper.opacity(colorHex == "#FDFBF5" ? 0.9 : 0), lineWidth: 2).padding(3))
+        }
+    }
+
+    private func sizeButton(systemName: String, delta: CGFloat) -> some View {
+        TrackedEditorToolButton(componentID: "sheet.text.size.\(systemName)", disabled: false, action: {
+            style.fontSize = min(160, max(32, style.fontSize + delta))
+        }) {
+            Image(systemName: systemName)
+                .font(.system(size: 14, weight: .bold))
+                .foregroundStyle(Color.clay)
+                .frame(width: 34, height: 34)
+                .background(Color.paper)
+                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).stroke(Color.lineSoft, lineWidth: 1))
+        }
+    }
+
+    private func formatToggle(title: String, systemName: String, isOn: Binding<Bool>) -> some View {
+        TrackedEditorToolButton(componentID: "sheet.text.format.\(systemName)", disabled: false, action: {
+            isOn.wrappedValue.toggle()
+        }) {
+            Image(systemName: systemName)
+                .font(.system(size: 15, weight: .bold))
+                .foregroundStyle(isOn.wrappedValue ? Color.paper : Color.clay)
+                .frame(width: 42, height: 36)
+                .background(isOn.wrappedValue ? Color.clay : Color.paper)
+                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).stroke(isOn.wrappedValue ? Color.clay : Color.lineSoft, lineWidth: 1))
+                .accessibilityLabel(title)
+        }
+    }
+
+    private func switchButton(title: String, isOn: Binding<Bool>) -> some View {
+        TrackedEditorToolButton(componentID: "sheet.text.switch.\(title)", disabled: false, action: {
+            isOn.wrappedValue.toggle()
+        }) {
+            Text(title)
+                .font(.system(size: 12, weight: .bold, design: .rounded))
+                .foregroundStyle(isOn.wrappedValue ? Color.paper : Color.inkSoft)
+                .padding(.horizontal, 10)
+                .frame(height: 32)
+                .background(isOn.wrappedValue ? Color.clay : Color.paper)
+                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).stroke(isOn.wrappedValue ? Color.clay : Color.lineSoft, lineWidth: 1))
+        }
     }
 
     private func sliderRow(title: String, value: Binding<CGFloat>, range: ClosedRange<CGFloat>, step: CGFloat) -> some View {
@@ -8683,6 +9951,20 @@ private struct TextInputSheet: View {
                 .font(.system(size: 13, weight: .bold, design: .rounded))
                 .foregroundStyle(Color.inkSoft)
                 .frame(width: 42, alignment: .trailing)
+        }
+    }
+
+    private func percentSliderRow(title: String, value: Binding<CGFloat>, range: ClosedRange<CGFloat>, step: CGFloat) -> some View {
+        HStack(spacing: 10) {
+            Text(title)
+                .font(.system(size: 13, weight: .semibold, design: .rounded))
+                .foregroundStyle(Color.ink)
+                .frame(width: 72, alignment: .leading)
+            Slider(value: value, in: range, step: step)
+            Text("\(Int((value.wrappedValue * 100).rounded()))%")
+                .font(.system(size: 13, weight: .bold, design: .rounded))
+                .foregroundStyle(Color.inkSoft)
+                .frame(width: 46, alignment: .trailing)
         }
     }
 
@@ -8707,10 +9989,90 @@ private struct TextInputSheet: View {
             }
         }
     }
+
+    private func rememberFont(_ font: String) {
+        guard systemFontOptions.contains(font) || googleFontOptions.contains(font) else { return }
+        var fonts = recentFonts.filter { $0 != font }
+        fonts.insert(font, at: 0)
+        recentFontStorage = fonts.prefix(6).joined(separator: "|")
+    }
+
+    private func resolvedFontName(for font: String) -> String {
+        googleFontOptions.contains(font) ? fontLibrary.resolvedName(for: font) : font
+    }
+
+    private func statusText(for font: String) -> String {
+        guard googleFontOptions.contains(font) else { return "System" }
+        if fontLibrary.isAvailable(font) {
+            return "Cached"
+        }
+        if style.fontName == font && fontStatus.localizedCaseInsensitiveContains("failed") {
+            return "Fallback"
+        }
+        if style.fontName == font && fontStatus.localizedCaseInsensitiveContains("loading") {
+            return "Loading"
+        }
+        return "Tap to load"
+    }
+}
+
+private struct FontOptionCard: View {
+    let option: FontOption
+    let previewText: String
+    let isSelected: Bool
+    let resolvedName: String
+    let statusText: String
+    let action: () -> Void
+
+    var body: some View {
+        TrackedEditorToolButton(componentID: "sheet.text.font.\(option.name.replacingOccurrences(of: " ", with: "-"))", disabled: false, action: action) {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(spacing: 6) {
+                    Text(option.name)
+                        .font(FontResolver.swiftUIFont(name: resolvedName, size: 17, bold: false, italic: false))
+                        .foregroundStyle(Color.ink)
+                        .lineLimit(1)
+                    Spacer(minLength: 6)
+                    if isSelected {
+                        Image(systemName: "checkmark.circle.fill")
+                            .font(.system(size: 15, weight: .bold))
+                            .foregroundStyle(Color.clay)
+                    }
+                }
+
+                Text(previewText)
+                    .font(FontResolver.swiftUIFont(name: resolvedName, size: 23, bold: false, italic: false))
+                    .foregroundStyle(Color.ink)
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.7)
+                    .frame(maxWidth: .infinity, minHeight: 54, alignment: .leading)
+
+                Text(statusText)
+                    .font(.system(size: 10, weight: .bold, design: .rounded))
+                    .foregroundStyle(statusText == "Fallback" ? Color.red : Color.inkSoft)
+            }
+            .padding(12)
+            .frame(width: 184, height: 126, alignment: .leading)
+            .background(isSelected ? Color.clay.opacity(0.12) : Color.paper)
+            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(isSelected ? Color.clay : Color.lineSoft, lineWidth: isSelected ? 2 : 1))
+        }
+    }
+}
+
+private extension View {
+    func textPanelStyle() -> some View {
+        self
+            .padding(14)
+            .background(Color.paper.opacity(0.8))
+            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Color.lineSoft, lineWidth: 1.1))
+    }
 }
 
 private struct TextRenderPreview: View {
     let image: UIImage?
+    let style: TextStyleParameters
 
     var body: some View {
         VStack(alignment: .leading, spacing: 9) {
@@ -8732,15 +10094,27 @@ private struct TextRenderPreview: View {
                 CheckerboardPattern()
                     .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
 
-                if let image {
-                    Image(uiImage: image)
-                        .resizable()
-                        .scaledToFit()
-                        .padding(14)
-                } else {
-                    Text("Sample text")
-                        .font(.system(size: 24, weight: .bold, design: .serif))
-                        .foregroundStyle(Color.inkSoft)
+                ZStack {
+                    if let backgroundHex = style.backgroundHex {
+                        RoundedRectangle(cornerRadius: 13, style: .continuous)
+                            .fill(Color(hex: backgroundHex).opacity(0.82))
+                            .overlay(RoundedRectangle(cornerRadius: 13, style: .continuous).stroke(Color.paper.opacity(0.8), lineWidth: 2))
+                            .padding(.horizontal, 20)
+                            .padding(.vertical, 18)
+                    }
+
+                    if let image {
+                        Image(uiImage: image)
+                            .resizable()
+                            .scaledToFit()
+                            .padding(14)
+                            .opacity(style.opacity)
+                            .shadow(color: style.shadowEnabled ? Color(hex: style.shadowColorHex).opacity(0.28) : .clear, radius: 5, x: 4, y: 5)
+                    } else {
+                        Text("Sample text")
+                            .font(.system(size: 24, weight: .bold, design: .serif))
+                            .foregroundStyle(Color.inkSoft)
+                    }
                 }
             }
             .frame(height: 118)
@@ -8835,6 +10209,134 @@ private struct NewPageSheet: View {
         }
         .padding(18)
         .background(Color.background)
+    }
+}
+
+private struct QuickClipSheet: View {
+    let initialPlace: String
+    let onCreate: (String, String, Data?) -> Void
+    let onCancel: () -> Void
+    @State private var place: String
+    @State private var note = ""
+    @State private var selectedPhoto: PhotosPickerItem?
+    @State private var photoData: Data?
+
+    init(initialPlace: String, onCreate: @escaping (String, String, Data?) -> Void, onCancel: @escaping () -> Void) {
+        self.initialPlace = initialPlace
+        self.onCreate = onCreate
+        self.onCancel = onCancel
+        _place = State(initialValue: initialPlace)
+    }
+
+    private var canCreate: Bool {
+        !place.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
+            !note.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
+            photoData != nil
+    }
+
+    var body: some View {
+        NavigationStack {
+            ScrollView(showsIndicators: false) {
+                VStack(alignment: .leading, spacing: 18) {
+                    PhotosPicker(selection: $selectedPhoto, matching: .images) {
+                        ZStack {
+                            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                                .fill(Color.paper)
+                                .frame(height: 240)
+                                .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(Color.lineSoft, lineWidth: 1.2))
+
+                            if let photoData, let image = UIImage(data: photoData) {
+                                Image(uiImage: image)
+                                    .resizable()
+                                    .scaledToFill()
+                                    .frame(height: 240)
+                                    .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+                                    .overlay(alignment: .bottomTrailing) {
+                                        Image(systemName: "photo.badge.plus")
+                                            .font(.system(size: 18, weight: .semibold))
+                                            .foregroundStyle(Color.paper)
+                                            .frame(width: 42, height: 42)
+                                            .background(Color.clay)
+                                            .clipShape(Circle())
+                                            .padding(12)
+                                    }
+                            } else {
+                                VStack(spacing: 10) {
+                                    Image(systemName: "photo.badge.plus")
+                                        .font(.system(size: 34, weight: .semibold))
+                                        .foregroundStyle(Color.clay)
+                                    Text("Add Photo")
+                                        .font(.system(size: 17, weight: .bold, design: .rounded))
+                                        .foregroundStyle(Color.ink)
+                                }
+                            }
+                        }
+                    }
+                    .buttonStyle(.plain)
+
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Place")
+                            .font(.system(size: 14, weight: .bold, design: .rounded))
+                            .foregroundStyle(Color.inkSoft)
+
+                        TextField("Where are you?", text: $place)
+                            .font(.system(size: 18, weight: .semibold, design: .rounded))
+                            .padding(.horizontal, 14)
+                            .frame(height: 52)
+                            .background(Color.paper)
+                            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                            .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Color.lineSoft, lineWidth: 1.2))
+                    }
+
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("One Line")
+                            .font(.system(size: 14, weight: .bold, design: .rounded))
+                            .foregroundStyle(Color.inkSoft)
+
+                        TextField("What happened here?", text: $note, axis: .vertical)
+                            .font(.system(size: 18, weight: .medium, design: .rounded))
+                            .lineLimit(3, reservesSpace: true)
+                            .padding(14)
+                            .background(Color.paper)
+                            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                            .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Color.lineSoft, lineWidth: 1.2))
+                    }
+                }
+                .padding(18)
+                .padding(.bottom, 20)
+            }
+            .background(PaperBackground().ignoresSafeArea())
+            .navigationTitle("Quick Clip")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    TrackedEditorToolButton(componentID: "sheet.quick-clip.cancel", disabled: false, action: onCancel) {
+                        Text("Cancel")
+                            .font(.system(size: 14, weight: .bold, design: .rounded))
+                            .foregroundStyle(Color.inkSoft)
+                            .padding(.horizontal, 8)
+                            .frame(height: 34)
+                    }
+                }
+
+                ToolbarItem(placement: .topBarTrailing) {
+                    TrackedEditorToolButton(componentID: "sheet.quick-clip.create", disabled: !canCreate, action: {
+                        onCreate(place, note, photoData)
+                    }) {
+                        Text("Create")
+                            .font(.system(size: 14, weight: .bold, design: .rounded))
+                            .foregroundStyle(canCreate ? Color.clay : Color.inkSoft.opacity(0.55))
+                            .padding(.horizontal, 8)
+                            .frame(height: 34)
+                    }
+                }
+            }
+        }
+        .task(id: selectedPhoto) {
+            guard let selectedPhoto else { return }
+            InteractionTelemetry.recordAction(componentID: "sheet.quick-clip.photo", disabled: false)
+            photoData = try? await selectedPhoto.loadTransferable(type: Data.self)
+        }
     }
 }
 
@@ -9315,22 +10817,51 @@ private struct CanvasThumbnail: View {
 
     var body: some View {
         GeometryReader { proxy in
-            let scale = max(proxy.size.width / document.canvasSize.width, proxy.size.height / document.canvasSize.height)
-
             ZStack {
                 Color.editorPeach
 
-                CanvasDocumentRenderer(
-                    repository: repository,
-                    document: document,
-                    scale: scale,
-                    selectedElementIDs: [],
-                    elementLimit: 8
+                CanvasPreviewContent(
+                    background: document.background,
+                    elements: document.elements,
+                    documentSize: document.canvasSize.cgSize,
+                    viewportSize: proxy.size,
+                    imageURL: { repository.imageURL(for: $0) }
                 )
             }
             .frame(width: proxy.size.width, height: proxy.size.height)
             .clipped()
         }
+    }
+}
+
+private struct CanvasPreviewContent: View {
+    let background: CanvasBackground
+    let elements: [CanvasElement]
+    let documentSize: CGSize
+    let viewportSize: CGSize
+    let imageURL: (String?) -> URL?
+
+    private var previewTransform: CanvasViewportTransform {
+        CanvasViewportTransform(documentSize: documentSize, viewportSize: viewportSize)
+    }
+
+    private var visibleElements: [CanvasElement] {
+        elements.filter { !$0.hidden }.sorted { $0.zIndex < $1.zIndex }
+    }
+
+    var body: some View {
+        ZStack {
+            CanvasSurface(background: background)
+                .frame(width: viewportSize.width, height: viewportSize.height)
+
+            ForEach(visibleElements) { element in
+                CanvasElementView(element: previewTransform.displayElement(element), selected: false, imageURL: imageURL)
+                    .rotationEffect(.degrees(element.rotation))
+                    .position(previewTransform.displayPoint(CGPoint(x: element.x, y: element.y)))
+                    .opacity(element.opacity)
+            }
+        }
+        .frame(width: viewportSize.width, height: viewportSize.height)
     }
 }
 
@@ -9868,24 +11399,61 @@ private struct HeaderButton: View {
 }
 
 private struct CreateBanner: View {
+    let onQuickClip: () -> Void
     let onCreatePage: () -> Void
     let onTemplatePage: () -> Void
 
     var body: some View {
-        HStack(spacing: 12) {
-            HomeCreateOption(
-                title: "New Page",
-                icon: "square.and.pencil",
-                tint: .sand,
-                action: onCreatePage
-            )
+        VStack(spacing: 12) {
+            TrackedEditorToolButton(componentID: "home.create.quick-clip", disabled: false, action: onQuickClip) {
+                HStack(spacing: 12) {
+                    Image(systemName: "camera.viewfinder")
+                        .font(.system(size: 24, weight: .semibold))
+                        .foregroundStyle(Color.paper)
+                        .frame(width: 52, height: 52)
+                        .background(Color.clay)
+                        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
 
-            HomeCreateOption(
-                title: "Template",
-                icon: "doc.text",
-                tint: .sage,
-                action: onTemplatePage
-            )
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Quick Clip")
+                            .font(.system(size: 19, weight: .bold, design: .rounded))
+                            .foregroundStyle(Color.ink)
+                            .lineLimit(1)
+
+                        Text("Place, photo, and one line")
+                            .font(.system(size: 12, weight: .semibold, design: .rounded))
+                            .foregroundStyle(Color.inkSoft)
+                            .lineLimit(1)
+                    }
+
+                    Spacer()
+
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 13, weight: .bold))
+                        .foregroundStyle(Color.inkSoft)
+                }
+                .padding(12)
+                .frame(maxWidth: .infinity)
+                .background(Color.paper)
+                .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(Color.lineSoft, lineWidth: 1.2))
+            }
+
+            HStack(spacing: 12) {
+                HomeCreateOption(
+                    title: "New Page",
+                    icon: "square.and.pencil",
+                    tint: .sand,
+                    action: onCreatePage
+                )
+
+                HomeCreateOption(
+                    title: "Template",
+                    icon: "doc.text",
+                    tint: .sage,
+                    action: onTemplatePage
+                )
+            }
         }
         .padding(12)
         .background(
@@ -9932,10 +11500,13 @@ private struct HomeCreateOption: View {
 
 private struct MyLibraryRootTabView: View {
     @ObservedObject var repository: NotebookRepository
+    let currentUser: AuthenticatedUser?
     @Binding var path: [TravelRoute]
     @Binding var showingNewNotebook: Bool
+    let onQuickClip: () -> Void
     let onCreatePage: () -> Void
     let onTemplatePage: () -> Void
+    let onSignOut: () -> Void
 
     private let notebookColumns = [
         GridItem(.flexible(), spacing: 16),
@@ -9966,13 +11537,15 @@ private struct MyLibraryRootTabView: View {
                         .lineLimit(2)
                 }
 
+                accountCard
+
                 HStack(spacing: 12) {
                     libraryMetric(title: "Books", value: "\(repository.notebooks.count)", icon: "book.closed")
                     libraryMetric(title: "Pages", value: "\(repository.pages.count)", icon: "doc.text.image")
                     libraryMetric(title: "Items", value: "\(elementCount)", icon: "square.stack.3d.up")
                 }
 
-                CreateBanner(onCreatePage: onCreatePage, onTemplatePage: onTemplatePage)
+                CreateBanner(onQuickClip: onQuickClip, onCreatePage: onCreatePage, onTemplatePage: onTemplatePage)
 
                 VStack(alignment: .leading, spacing: 12) {
                     HStack {
@@ -10070,6 +11643,50 @@ private struct MyLibraryRootTabView: View {
             .padding(.top, 8)
             .padding(.bottom, 116)
         }
+    }
+
+    private var accountCard: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "person.crop.circle.fill")
+                .font(.system(size: 28, weight: .semibold))
+                .foregroundStyle(Color.clay)
+                .frame(width: 46, height: 46)
+                .background(Color.sand.opacity(0.42))
+                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text(currentUser?.displayName ?? "TravelClip User")
+                    .font(.system(size: 16, weight: .bold, design: .rounded))
+                    .foregroundStyle(Color.ink)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.75)
+
+                Text(currentUser?.email ?? "Local account")
+                    .font(.system(size: 12, weight: .medium, design: .rounded))
+                    .foregroundStyle(Color.inkSoft)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.72)
+            }
+
+            Spacer(minLength: 8)
+
+            /*
+            TrackedEditorToolButton(componentID: "my.account.signOut", disabled: false, action: onSignOut) {
+                Image(systemName: "rectangle.portrait.and.arrow.right")
+                    .font(.system(size: 17, weight: .bold))
+                    .foregroundStyle(Color.clay)
+                    .frame(width: 40, height: 40)
+                    .background(Color.paper)
+                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(Color.lineSoft, lineWidth: 1))
+            }
+            .accessibilityLabel("Sign out")
+            */
+        }
+        .padding(12)
+        .background(Color.paper.opacity(0.92))
+        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(Color.lineSoft, lineWidth: 1.2))
     }
 
     private func libraryMetric(title: String, value: String, icon: String) -> some View {

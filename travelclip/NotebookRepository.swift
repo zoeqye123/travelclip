@@ -487,41 +487,7 @@ final class NotebookRepository: ObservableObject {
     }
 
     var templateLibrary: [PageTemplateDefinition] {
-        [
-            PageTemplateDefinition(
-                id: "postcard-day",
-                title: "Postcard",
-                background: CanvasBackground(colorA: "#FDF0D6", colorB: "#E4F1EC"),
-                elements: [
-                    CanvasElement(kind: .tape, x: 540, y: 250, width: 760, height: 90, rotation: -2, zIndex: 1, colorHex: "#E4C385"),
-                    CanvasElement(kind: .image, x: 350, y: 570, width: 420, height: 320, rotation: -5, zIndex: 2, colorHex: "#A9C0D2"),
-                    CanvasElement(kind: .wordArt, text: "Travel clip", x: 620, y: 820, width: 560, height: 140, rotation: 3, zIndex: 3, colorHex: "#B77255", fontSize: 76, bold: true),
-                    CanvasElement(kind: .sticker, symbol: "sparkles", x: 790, y: 530, width: 150, height: 140, rotation: 8, zIndex: 4, colorHex: "#7AA08C")
-                ]
-            ),
-            PageTemplateDefinition(
-                id: "map-memory",
-                title: "Map Memory",
-                background: CanvasBackground(colorA: "#FBF8F0", colorB: "#E8F2EE"),
-                elements: [
-                    CanvasElement(kind: .wordArt, text: "Route notes", x: 540, y: 230, width: 620, height: 130, rotation: -2, zIndex: 1, colorHex: "#2E2824", fontSize: 82, bold: true),
-                    CanvasElement(kind: .image, x: 540, y: 620, width: 650, height: 460, rotation: 2, zIndex: 2, colorHex: "#D1B890"),
-                    CanvasElement(kind: .sticker, symbol: "mappin.and.ellipse", x: 260, y: 970, width: 170, height: 150, rotation: -8, zIndex: 3, colorHex: "#C4563F"),
-                    CanvasElement(kind: .tape, x: 610, y: 1050, width: 570, height: 78, rotation: 5, zIndex: 4, colorHex: "#A8C8B6")
-                ]
-            ),
-            PageTemplateDefinition(
-                id: "photo-stack",
-                title: "Photo Stack",
-                background: CanvasBackground(colorA: "#FFFFFF", colorB: "#F6E6E8"),
-                elements: [
-                    CanvasElement(kind: .image, x: 445, y: 520, width: 570, height: 410, rotation: -6, zIndex: 1, colorHex: "#A9C0D2"),
-                    CanvasElement(kind: .image, x: 615, y: 800, width: 520, height: 390, rotation: 7, zIndex: 2, colorHex: "#D1B890"),
-                    CanvasElement(kind: .text, text: "tiny moments", x: 540, y: 1190, width: 650, height: 140, zIndex: 3, colorHex: "#2E2824", fontSize: 74, bold: true),
-                    CanvasElement(kind: .sticker, symbol: "heart.fill", x: 795, y: 310, width: 150, height: 135, rotation: 9, zIndex: 4, colorHex: "#D99A8C")
-                ]
-            )
-        ]
+        PageTemplateLibrary.builtIn
     }
 
     var selectedElementID: UUID? {
@@ -706,6 +672,60 @@ final class NotebookRepository: ObservableObject {
         return pageID
     }
 
+    @discardableResult
+    func createQuickClip(
+        in notebookID: UUID?,
+        place: String,
+        note: String,
+        photoData: Data?
+    ) -> Result<UUID, CanvasInsertError> {
+        let trimmedPlace = place.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedNote = note.trimmingCharacters(in: .whitespacesAndNewlines)
+        let title = trimmedPlace.isEmpty ? "Quick Clip" : trimmedPlace
+        let pageID = createPage(in: notebookID, title: title, template: .blank, saveAfterCreate: false)
+        var photoFileName: String?
+        var photoSize = CGSize(width: 900, height: 1200)
+
+        if let photoData {
+            guard let image = UIImage(data: photoData) else {
+                deletePage(pageID)
+                return .failure(.unsupportedImageData)
+            }
+            guard let jpegData = image.jpegData(compressionQuality: 0.92) else {
+                deletePage(pageID)
+                return .failure(.imageEncodingFailed)
+            }
+
+            do {
+                try fileManager.createDirectory(at: assetsURL, withIntermediateDirectories: true)
+                let fileName = "\(UUID().uuidString)-quick-clip.jpg"
+                let url = assetsURL.appendingPathComponent(fileName)
+                try jpegData.write(to: url, options: .atomic)
+                guard verifiedAssetURL(for: fileName) != nil else {
+                    deletePage(pageID)
+                    return .failure(.assetUnavailable)
+                }
+                photoFileName = fileName
+                photoSize = image.size
+            } catch {
+                deletePage(pageID)
+                return .failure(.writeFailed(error.localizedDescription))
+            }
+        }
+
+        mutatePage(pageID, autosave: false) { page in
+            page.canvasDocument.background = CanvasBackground(colorA: "#FBF8F0", colorB: "#EAF1F7")
+            page.canvasDocument.elements = quickClipElements(
+                place: title,
+                note: trimmedNote.isEmpty ? "A small moment from today." : trimmedNote,
+                photoFileName: photoFileName,
+                photoSize: photoSize
+            )
+        }
+        commitPage(pageID)
+        return .success(pageID)
+    }
+
     func renamePage(_ pageID: UUID, to title: String) {
         let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
@@ -803,12 +823,20 @@ final class NotebookRepository: ObservableObject {
                     width: style.width,
                     height: 190,
                     zIndex: zIndex,
+                    opacity: style.opacity,
                     colorHex: style.colorHex,
+                    backgroundHex: style.backgroundHex,
+                    strokeHex: style.strokeHex,
+                    strokeWidth: style.strokeWidth,
+                    textShadowEnabled: style.shadowEnabled,
+                    shadowColorHex: style.shadowColorHex,
                     fontName: style.fontName,
                     fontSize: style.fontSize,
                     bold: style.bold,
                     italic: style.italic,
-                    textAlignment: style.alignment
+                    textAlignment: style.alignment,
+                    shadow: style.shadowEnabled,
+                    stroke: style.strokeWidth > 0
                 )
             )
             selectedElementID = elementID
@@ -839,12 +867,20 @@ final class NotebookRepository: ObservableObject {
                     height: 160,
                     rotation: -4,
                     zIndex: zIndex,
+                    opacity: style.opacity,
                     colorHex: style.colorHex,
+                    backgroundHex: style.backgroundHex,
+                    strokeHex: style.strokeHex,
+                    strokeWidth: style.strokeWidth,
+                    textShadowEnabled: style.shadowEnabled,
+                    shadowColorHex: style.shadowColorHex,
                     fontName: style.fontName,
                     fontSize: style.fontSize,
                     bold: true,
                     italic: style.italic,
-                    textAlignment: style.alignment
+                    textAlignment: style.alignment,
+                    shadow: style.shadowEnabled,
+                    stroke: style.strokeWidth > 0
                 )
             )
             selectedElementID = elementID
@@ -1261,6 +1297,35 @@ final class NotebookRepository: ObservableObject {
     }
 
     @discardableResult
+    func replaceImageElement(_ elementID: UUID, with item: PhotosPickerItem?, on pageID: UUID) async -> Result<UUID, CanvasInsertError> {
+        guard let item else { return .failure(.emptySelection) }
+        guard ensureWritablePage(pageID, title: "New Page") else { return .failure(.pageMissing) }
+        guard let element = page(id: pageID)?.canvasDocument.elements.first(where: { $0.id == elementID }),
+              element.kind == .image,
+              !element.locked else { return .failure(.assetUnavailable) }
+        guard let data = try? await item.loadTransferable(type: Data.self) else { return .failure(.photoDataUnavailable) }
+        guard let image = UIImage(data: data) else { return .failure(.unsupportedImageData) }
+        guard let jpegData = image.jpegData(compressionQuality: 0.92) else { return .failure(.imageEncodingFailed) }
+        do {
+            try fileManager.createDirectory(at: assetsURL, withIntermediateDirectories: true)
+            let fileName = "\(UUID().uuidString).jpg"
+            let url = assetsURL.appendingPathComponent(fileName)
+            try jpegData.write(to: url, options: Data.WritingOptions.atomic)
+            guard verifiedAssetURL(for: fileName) != nil else { return .failure(.assetUnavailable) }
+            storeUndoSnapshot(for: pageID)
+            mutateElement(elementID, on: pageID) { element in
+                guard element.kind == .image, !element.locked else { return }
+                element.localPath = fileName
+                element.colorHex = "#A9C0D2"
+            }
+            selectedElementID = elementID
+            return .success(elementID)
+        } catch {
+            return .failure(.writeFailed(error.localizedDescription))
+        }
+    }
+
+    @discardableResult
     func pasteFromClipboard(to pageID: UUID) -> Result<String, CanvasInsertError> {
         let pasteboard = UIPasteboard.general
         if let image = pasteboard.image {
@@ -1388,6 +1453,114 @@ final class NotebookRepository: ObservableObject {
             }
         }
         return insertedID.map { .success($0) } ?? .failure(.pageMissing)
+    }
+
+    private func quickClipElements(place: String, note: String, photoFileName: String?, photoSize: CGSize) -> [CanvasElement] {
+        var elements: [CanvasElement] = [
+            CanvasElement(
+                kind: .shape,
+                symbol: "rounded-rect-outline",
+                x: 540,
+                y: 960,
+                width: 860,
+                height: 1420,
+                zIndex: 1,
+                opacity: 0.92,
+                colorHex: "#FFFFFF",
+                strokeHex: "#D8C9B8",
+                strokeWidth: 7,
+                cornerRadius: 42
+            ),
+            CanvasElement(
+                kind: .text,
+                text: place,
+                x: 540,
+                y: 238,
+                width: 760,
+                height: 116,
+                zIndex: 3,
+                colorHex: "#2E2824",
+                fontName: "Georgia",
+                fontSize: min(max(CGFloat(88 - place.count), 48), 82),
+                bold: true
+            ),
+            CanvasElement(
+                kind: .text,
+                text: note,
+                x: 540,
+                y: 1540,
+                width: 760,
+                height: 220,
+                zIndex: 4,
+                colorHex: "#4A403A",
+                fontName: "Georgia",
+                fontSize: min(max(CGFloat(72 - note.count / 3), 40), 58),
+                textAlignment: "center"
+            ),
+            CanvasElement(
+                kind: .sticker,
+                symbol: "mappin.and.ellipse",
+                x: 222,
+                y: 248,
+                width: 130,
+                height: 118,
+                rotation: -8,
+                zIndex: 5,
+                colorHex: "#B77255"
+            ),
+            CanvasElement(
+                kind: .tape,
+                x: 540,
+                y: 438,
+                width: 720,
+                height: 86,
+                rotation: -3,
+                zIndex: 6,
+                opacity: 0.82,
+                colorHex: "#E0B56D",
+                cornerRadius: 12
+            )
+        ]
+
+        if let photoFileName {
+            let aspect = max(photoSize.width / max(photoSize.height, 1), 0.2)
+            let photoWidth: CGFloat = 760
+            let photoHeight = min(max(photoWidth / aspect, 620), 930)
+            elements.append(
+                CanvasElement(
+                    kind: .image,
+                    localPath: photoFileName,
+                    x: 540,
+                    y: 900,
+                    width: photoWidth,
+                    height: photoHeight,
+                    rotation: -1.5,
+                    zIndex: 2,
+                    colorHex: "#A9C0D2",
+                    cornerRadius: 30
+                )
+            )
+        } else {
+            elements.append(
+                CanvasElement(
+                    kind: .shape,
+                    symbol: "photo",
+                    x: 540,
+                    y: 900,
+                    width: 760,
+                    height: 820,
+                    rotation: -1.5,
+                    zIndex: 2,
+                    opacity: 0.72,
+                    colorHex: "#D9E5E2",
+                    strokeHex: "#D8C9B8",
+                    strokeWidth: 5,
+                    cornerRadius: 30
+                )
+            )
+        }
+
+        return elements
     }
 
     private func looksLikeURL(_ string: String) -> Bool {
@@ -1685,33 +1858,17 @@ final class NotebookRepository: ObservableObject {
     func applyTemplate(_ template: PageTemplateDefinition, to pageID: UUID) {
         storeUndoSnapshot(for: pageID)
         mutatePage(pageID) { page in
-            let startZ = (page.canvasDocument.elements.map(\.zIndex).max() ?? 0) + 1
-            page.canvasDocument.background = template.background
-            let elements = template.elements.enumerated().map { offset, element in
-                var copy = element
-                copy.id = UUID()
-                copy.zIndex = startZ + offset
-                return copy
-            }
-            page.canvasDocument.elements.append(contentsOf: elements)
-            setSelectedElementIDs(Set(elements.map(\.id)))
+            let application = PageTemplateApplier.apply(template, to: &page.canvasDocument)
+            setSelectedElementIDs(application.selectedElementIDs)
         }
     }
 
     func bringForward(_ elementID: UUID, on pageID: UUID) {
-        storeUndoSnapshot(for: pageID)
-        mutateElement(elementID, on: pageID) { element in
-            element.zIndex += 1
-        }
-        normalizeLayerOrder(on: pageID)
+        adjustElementLayer(elementID, on: pageID, mode: .forward)
     }
 
     func sendBackward(_ elementID: UUID, on pageID: UUID) {
-        storeUndoSnapshot(for: pageID)
-        mutateElement(elementID, on: pageID) { element in
-            element.zIndex -= 1
-        }
-        normalizeLayerOrder(on: pageID)
+        adjustElementLayer(elementID, on: pageID, mode: .backward)
     }
 
     func bringToFront(_ elementID: UUID, on pageID: UUID) {
@@ -2102,11 +2259,19 @@ final class NotebookRepository: ObservableObject {
             element.text = trimmed
             element.fontName = style.fontName
             element.fontSize = style.fontSize
+            element.opacity = style.opacity
             element.colorHex = style.colorHex
+            element.backgroundHex = style.backgroundHex
+            element.strokeHex = style.strokeHex
+            element.strokeWidth = style.strokeWidth
+            element.textShadowEnabled = style.shadowEnabled
+            element.shadowColorHex = style.shadowColorHex
             element.bold = style.bold
             element.italic = style.italic
             element.textAlignment = style.alignment
             element.width = style.width
+            element.shadow = style.shadowEnabled
+            element.stroke = style.strokeWidth > 0
         }
     }
 
@@ -2265,13 +2430,28 @@ final class NotebookRepository: ObservableObject {
         case back
     }
 
+    private func adjustElementLayer(_ elementID: UUID, on pageID: UUID, mode: SelectionLayerMode) {
+        guard let document = page(id: pageID)?.canvasDocument,
+              let element = document.elements.first(where: { $0.id == elementID }),
+              !element.locked else { return }
+        adjustLayerOrder(on: pageID, selectedIDs: [elementID], mode: mode)
+    }
+
     private func adjustSelectionLayer(on pageID: UUID, mode: SelectionLayerMode) {
         guard !selectedElementIDs.isEmpty else { return }
         guard let document = page(id: pageID)?.canvasDocument else { return }
         let sorted = document.elements.sorted { $0.zIndex < $1.zIndex }
         let selected = sorted.filter { selectedElementIDs.contains($0.id) && !$0.locked }
         guard !selected.isEmpty else { return }
-        let selectedIDs = Set(selected.map(\.id))
+        adjustLayerOrder(on: pageID, selectedIDs: Set(selected.map(\.id)), mode: mode)
+    }
+
+    private func adjustLayerOrder(on pageID: UUID, selectedIDs: Set<UUID>, mode: SelectionLayerMode) {
+        guard !selectedIDs.isEmpty else { return }
+        guard let document = page(id: pageID)?.canvasDocument else { return }
+        let sorted = document.elements.sorted { $0.zIndex < $1.zIndex }
+        let selected = sorted.filter { selectedIDs.contains($0.id) }
+        guard !selected.isEmpty else { return }
         var orderedIDs = sorted.map(\.id)
 
         switch mode {

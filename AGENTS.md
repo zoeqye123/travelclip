@@ -7,6 +7,38 @@
 - Generated/source media lives under `generated_assets/`; bundled runtime assets live under `travelclip/Resources/`.
 - The Xcode project is `travelclip.xcodeproj`; the app scheme and target are both `travelclip`.
 
+## Product Iteration Loop
+
+Treat Codex as a loop-driven product iteration system, not only as an executor of isolated requests. For each meaningful product change, move through this loop:
+
+1. User scenario
+   - Who uses it?
+   - Is it used before, during, or after travel?
+   - What concrete result does the user complete?
+
+2. Product hypothesis
+   - Why does the user open it?
+   - Why does the user stay?
+   - Why does the user share it?
+   - Why would the user pay for it?
+
+3. Minimum feature
+   - Do not build a full suite at once.
+   - Each round should deliver one verifiable closed loop.
+
+4. Implementation
+   - Codex writes the code.
+   - Codex must run build/test when relevant.
+   - Codex must summarize what changed.
+
+5. Experience check
+   - Review the result from the user's perspective.
+   - Look for friction, misunderstanding, and ineffective functionality.
+
+6. Next round
+   - Continue iterating based on feedback.
+   - Do not add random features without tying them back to the scenario and hypothesis.
+
 ## Coding Guidelines
 
 - Prefer SwiftUI-native patterns already used in `ContentView.swift` and related files.
