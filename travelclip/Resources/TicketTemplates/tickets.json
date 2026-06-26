@@ -55,6 +55,60 @@
       }
     },
     {
+      "id": "rail-metro",
+      "kind": "train",
+      "title": "Metro Ride",
+      "headline": "CITY METRO PASS",
+      "accentHex": "#D18B2F",
+      "paperHex": "#FFF5DF",
+      "fields": {
+        "origin": "CENTRAL",
+        "destination": "OLD TOWN",
+        "date": "01 JUN 2026",
+        "time": "18:05",
+        "seat": "STAND",
+        "gate": "LINE 2",
+        "className": "SINGLE",
+        "reference": "MTR 611"
+      }
+    },
+    {
+      "id": "rail-scenic",
+      "kind": "train",
+      "title": "Scenic Rail",
+      "headline": "MOUNTAIN RAILWAY",
+      "accentHex": "#496F58",
+      "paperHex": "#F2F6EA",
+      "fields": {
+        "origin": "LUCERNE",
+        "destination": "INTERLAKEN",
+        "date": "03 JUN 2026",
+        "time": "10:22",
+        "seat": "PAN 04",
+        "gate": "2",
+        "className": "PANORAMA",
+        "reference": "ALP 332"
+      }
+    },
+    {
+      "id": "rail-express",
+      "kind": "train",
+      "title": "Express",
+      "headline": "HIGH SPEED EXPRESS",
+      "accentHex": "#A63D40",
+      "paperHex": "#F8F1ED",
+      "fields": {
+        "origin": "TOKYO",
+        "destination": "KYOTO",
+        "date": "05 JUN 2026",
+        "time": "07:36",
+        "seat": "12E",
+        "gate": "14",
+        "className": "RESERVED",
+        "reference": "HSE 705"
+      }
+    },
+    {
       "id": "air-boarding",
       "kind": "flight",
       "title": "Boarding Pass",
@@ -106,6 +160,60 @@
         "gate": "C16",
         "className": "BUSINESS",
         "reference": "SKY 156"
+      }
+    },
+    {
+      "id": "air-red-eye",
+      "kind": "flight",
+      "title": "Red Eye",
+      "headline": "OVERNIGHT BOARDING",
+      "accentHex": "#39435E",
+      "paperHex": "#F0F1F7",
+      "fields": {
+        "origin": "LAX",
+        "destination": "JFK",
+        "date": "02 JUN 2026",
+        "time": "23:55",
+        "seat": "31C",
+        "gate": "45A",
+        "className": "ECONOMY",
+        "reference": "TC 902"
+      }
+    },
+    {
+      "id": "air-lounge",
+      "kind": "flight",
+      "title": "Lounge Pass",
+      "headline": "AIRPORT LOUNGE PASS",
+      "accentHex": "#8C6A42",
+      "paperHex": "#FBF2E4",
+      "fields": {
+        "origin": "DOH",
+        "destination": "LOUNGE C",
+        "date": "04 JUN 2026",
+        "time": "06:10",
+        "seat": "SOFA 08",
+        "gate": "C21",
+        "className": "ACCESS",
+        "reference": "LNG 214"
+      }
+    },
+    {
+      "id": "air-seaplane",
+      "kind": "flight",
+      "title": "Seaplane",
+      "headline": "ISLAND AIR TRANSFER",
+      "accentHex": "#2D8B9B",
+      "paperHex": "#EAF8F7",
+      "fields": {
+        "origin": "MALE",
+        "destination": "ATOLL",
+        "date": "08 JUN 2026",
+        "time": "15:25",
+        "seat": "06A",
+        "gate": "DOCK 1",
+        "className": "FLOAT",
+        "reference": "SEA 808"
       }
     },
     {
@@ -163,6 +271,60 @@
       }
     },
     {
+      "id": "cinema-indie",
+      "kind": "movie",
+      "title": "Indie House",
+      "headline": "ART HOUSE SCREENING",
+      "accentHex": "#4A4F41",
+      "paperHex": "#F4EBD6",
+      "fields": {
+        "origin": "BIJOU CINEMA",
+        "destination": "ROOM 12",
+        "date": "02 JUN 2026",
+        "time": "19:10",
+        "seat": "ROW D / 04",
+        "gate": "SCREEN 1",
+        "className": "INDIE",
+        "reference": "ART 204"
+      }
+    },
+    {
+      "id": "cinema-open-air",
+      "kind": "movie",
+      "title": "Open Air",
+      "headline": "OPEN AIR CINEMA",
+      "accentHex": "#2F6B58",
+      "paperHex": "#F0F7E9",
+      "fields": {
+        "origin": "PARK LAWN",
+        "destination": "SUNSET FILM",
+        "date": "06 JUN 2026",
+        "time": "20:15",
+        "seat": "BLANKET 7",
+        "gate": "LAWN A",
+        "className": "PICNIC",
+        "reference": "OPEN 606"
+      }
+    },
+    {
+      "id": "cinema-film-fest",
+      "kind": "movie",
+      "title": "Film Fest",
+      "headline": "FESTIVAL SCREENING",
+      "accentHex": "#B76E50",
+      "paperHex": "#FFF1E6",
+      "fields": {
+        "origin": "FEST HALL",
+        "destination": "SHORTS A",
+        "date": "09 JUN 2026",
+        "time": "17:45",
+        "seat": "ROW B / 11",
+        "gate": "THEATRE 4",
+        "className": "PASS",
+        "reference": "FF 091"
+      }
+    },
+    {
       "id": "ferry-keepsake",
       "kind": "ferry",
       "title": "Ferry Keepsake",
@@ -214,6 +376,168 @@
         "gate": "PIER 2",
         "className": "CABIN",
         "reference": "SEA 312"
+      }
+    },
+    {
+      "id": "ferry-river",
+      "kind": "ferry",
+      "title": "River Cruise",
+      "headline": "RIVER CRUISE PASS",
+      "accentHex": "#345E6F",
+      "paperHex": "#EDF6F6",
+      "fields": {
+        "origin": "PIER EAST",
+        "destination": "OLD BRIDGE",
+        "date": "02 JUN 2026",
+        "time": "18:30",
+        "seat": "DECK 2",
+        "gate": "PIER 8",
+        "className": "SUNSET",
+        "reference": "RVR 230"
+      }
+    },
+    {
+      "id": "ferry-lake",
+      "kind": "ferry",
+      "title": "Lake Boat",
+      "headline": "LAKE SHUTTLE TICKET",
+      "accentHex": "#6C8B5D",
+      "paperHex": "#F3F8ED",
+      "fields": {
+        "origin": "NORTH DOCK",
+        "destination": "PINE ISLE",
+        "date": "04 JUN 2026",
+        "time": "09:50",
+        "seat": "BENCH 6",
+        "gate": "DOCK C",
+        "className": "RETURN",
+        "reference": "LAKE 404"
+      }
+    },
+    {
+      "id": "ferry-harbor",
+      "kind": "ferry",
+      "title": "Harbor Hop",
+      "headline": "HARBOR WATERBUS",
+      "accentHex": "#237A8C",
+      "paperHex": "#EAF7FA",
+      "fields": {
+        "origin": "MARINA",
+        "destination": "MUSEUM PIER",
+        "date": "07 JUN 2026",
+        "time": "13:05",
+        "seat": "OPEN",
+        "gate": "BAY 3",
+        "className": "DAY",
+        "reference": "HBR 713"
+      }
+    },
+    {
+      "id": "event-museum",
+      "kind": "event",
+      "title": "Museum",
+      "headline": "MUSEUM ENTRY TICKET",
+      "accentHex": "#7B5942",
+      "paperHex": "#F7EFE2",
+      "fields": {
+        "origin": "CITY MUSEUM",
+        "destination": "SPECIAL WING",
+        "date": "01 JUN 2026",
+        "time": "11:00",
+        "seat": "ROOM 5",
+        "gate": "EAST",
+        "className": "ADMISSION",
+        "reference": "MSM 101"
+      }
+    },
+    {
+      "id": "event-concert",
+      "kind": "event",
+      "title": "Concert",
+      "headline": "LIVE CONCERT PASS",
+      "accentHex": "#8E3F62",
+      "paperHex": "#F9ECF2",
+      "fields": {
+        "origin": "ARENA",
+        "destination": "NIGHT SET",
+        "date": "03 JUN 2026",
+        "time": "20:30",
+        "seat": "SEC B / 18",
+        "gate": "GATE 6",
+        "className": "FLOOR",
+        "reference": "LVE 338"
+      }
+    },
+    {
+      "id": "event-gallery",
+      "kind": "event",
+      "title": "Gallery",
+      "headline": "GALLERY OPENING",
+      "accentHex": "#4D5F74",
+      "paperHex": "#F0F3F6",
+      "fields": {
+        "origin": "WHITE CUBE",
+        "destination": "ROOM BLUE",
+        "date": "05 JUN 2026",
+        "time": "18:00",
+        "seat": "STANDING",
+        "gate": "NORTH",
+        "className": "INVITE",
+        "reference": "ART 550"
+      }
+    },
+    {
+      "id": "event-theme-park",
+      "kind": "event",
+      "title": "Theme Park",
+      "headline": "THEME PARK DAY PASS",
+      "accentHex": "#D26A3F",
+      "paperHex": "#FFF2DD",
+      "fields": {
+        "origin": "SUN PARK",
+        "destination": "ZONE A",
+        "date": "07 JUN 2026",
+        "time": "09:00",
+        "seat": "ALL DAY",
+        "gate": "MAIN",
+        "className": "DAY PASS",
+        "reference": "FUN 707"
+      }
+    },
+    {
+      "id": "event-food-fair",
+      "kind": "event",
+      "title": "Food Fair",
+      "headline": "STREET FOOD FAIR",
+      "accentHex": "#AF5F35",
+      "paperHex": "#FFF5E8",
+      "fields": {
+        "origin": "MARKET ROW",
+        "destination": "TASTING LANE",
+        "date": "08 JUN 2026",
+        "time": "12:00",
+        "seat": "TABLE 4",
+        "gate": "SOUTH",
+        "className": "TASTING",
+        "reference": "EAT 812"
+      }
+    },
+    {
+      "id": "event-heritage-tour",
+      "kind": "event",
+      "title": "Heritage Tour",
+      "headline": "HERITAGE WALK PASS",
+      "accentHex": "#6F6A43",
+      "paperHex": "#F6F2DA",
+      "fields": {
+        "origin": "CLOCK TOWER",
+        "destination": "OLD QUARTER",
+        "date": "10 JUN 2026",
+        "time": "16:20",
+        "seat": "GROUP 2",
+        "gate": "START",
+        "className": "GUIDED",
+        "reference": "WALK 210"
       }
     }
   ]
