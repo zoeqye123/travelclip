@@ -1,30 +1,30 @@
 {
-  "displayName": "Figma Basic",
-  "tags": ["figma", "travel", "basic", "washi", "tape"],
+  "displayName": "Transparent Washi",
+  "tags": ["figma", "travel", "transparent", "washi", "tape"],
   "items": {
-    "figma-airmail-stripes.png": {
-      "title": "Airmail Stripes",
-      "tags": ["airmail", "flight", "stripe", "travel"]
+    "transparent-airmail-stripes.png": {
+      "title": "Torn Airmail",
+      "tags": ["transparent", "airmail", "flight", "stripe", "travel"]
     },
-    "figma-forest-trail.png": {
-      "title": "Forest Trail",
-      "tags": ["forest", "trail", "field", "nature"]
+    "transparent-forest-trail.png": {
+      "title": "Torn Forest Trail",
+      "tags": ["transparent", "forest", "trail", "field", "nature"]
     },
-    "figma-night-stars.png": {
-      "title": "Night Stars",
-      "tags": ["night", "stars", "transit", "travel"]
+    "transparent-night-stars.png": {
+      "title": "Torn Night Stars",
+      "tags": ["transparent", "night", "stars", "transit", "travel"]
     },
-    "figma-ocean-wave.png": {
-      "title": "Ocean Wave",
-      "tags": ["ocean", "wave", "sea", "beach"]
+    "transparent-ocean-wave.png": {
+      "title": "Torn Ocean Wave",
+      "tags": ["transparent", "ocean", "wave", "sea", "beach"]
     },
-    "figma-route-dots.png": {
-      "title": "Route Dots",
-      "tags": ["route", "map", "dots", "journal"]
+    "transparent-route-dots.png": {
+      "title": "Torn Route Dots",
+      "tags": ["transparent", "route", "map", "dots", "journal"]
     },
-    "figma-ticket-stubs.png": {
-      "title": "Ticket Stubs",
-      "tags": ["ticket", "stub", "keepsake", "travel"]
+    "transparent-ticket-stubs.png": {
+      "title": "Torn Ticket Stubs",
+      "tags": ["transparent", "ticket", "stub", "keepsake", "travel"]
     }
   }
 }
