@@ -332,6 +332,8 @@ private enum TapeGroupScanner {
 
 @MainActor
 final class NotebookRepository: ObservableObject {
+    static let defaultNotebookTitle = "My Travel Clips"
+
     @Published private(set) var notebooks: [TravelNotebook] = []
     @Published private(set) var pages: [JournalPage] = []
     @Published private(set) var canvasRevision = 0
@@ -613,6 +615,21 @@ final class NotebookRepository: ObservableObject {
         pages.first { $0.id == id }
     }
 
+    func notebook(id: UUID) -> TravelNotebook? {
+        notebooks.first { $0.id == id }
+    }
+
+    func notebook(for pageID: UUID) -> TravelNotebook? {
+        guard let page = page(id: pageID) else { return nil }
+        return notebook(id: page.notebookID)
+    }
+
+    func targetNotebookForNewPage(preferred notebookID: UUID? = nil) -> TravelNotebook {
+        let resolvedID = resolvedNotebookID(preferred: notebookID)
+        ensureNotebookExists(resolvedID)
+        return notebooks.first(where: { $0.id == resolvedID }) ?? notebooks[0]
+    }
+
     func createNotebook(title: String, themeIndex: Int, coverImageData: Data? = nil) -> UUID {
         let symbols = ["airplane.departure", "map.fill", "camera.fill", "sparkles", "photo.stack"]
         let tints = ["sand", "mist", "sage", "rose", "clay"]
@@ -775,7 +792,7 @@ final class NotebookRepository: ObservableObject {
 
     @discardableResult
     func createPage(in notebookID: UUID?, title: String, template: PageTemplate, saveAfterCreate: Bool = true, draft: Bool = false) -> UUID {
-        let resolvedNotebookID = notebookID ?? defaultNotebookID()
+        let resolvedNotebookID = resolvedNotebookID(preferred: notebookID)
         ensureNotebookExists(resolvedNotebookID)
         let pageID = UUID()
         var document = CanvasDocument(pageID: pageID)
@@ -2611,15 +2628,25 @@ final class NotebookRepository: ObservableObject {
         (pages.filter { $0.notebookID == notebookID }.map(\.sortIndex).max() ?? 0) + 1
     }
 
+    private func resolvedNotebookID(preferred notebookID: UUID?) -> UUID {
+        if let notebookID, notebooks.contains(where: { $0.id == notebookID }) {
+            return notebookID
+        }
+        return defaultNotebookID()
+    }
+
     private func defaultNotebookID() -> UUID {
         if notebooks.isEmpty {
             bootstrapIfNeeded()
+        }
+        if let activeNotebook = notebooks.sorted(by: { $0.updatedAt > $1.updatedAt }).first {
+            return activeNotebook.id
         }
         if let firstNotebook = notebooks.first {
             return firstNotebook.id
         }
         let notebook = TravelNotebook(
-            title: "Cloud Notebook",
+            title: Self.defaultNotebookTitle,
             coverPageID: nil,
             tintName: "sage",
             symbol: "cloud.sun.fill"
@@ -2635,7 +2662,7 @@ final class NotebookRepository: ObservableObject {
         }
         let notebook = TravelNotebook(
             id: notebookID,
-            title: "Cloud Notebook",
+            title: Self.defaultNotebookTitle,
             coverPageID: nil,
             tintName: "sage",
             symbol: "cloud.sun.fill"
@@ -2736,8 +2763,14 @@ final class NotebookRepository: ObservableObject {
 
     private func normalizeLoadedPages() {
         var changed = false
+        let fallbackNotebookID = defaultNotebookID()
+        let validNotebookIDs = Set(notebooks.map(\.id))
 
         for index in pages.indices {
+            if !validNotebookIDs.contains(pages[index].notebookID) {
+                pages[index].notebookID = fallbackNotebookID
+                changed = true
+            }
             let current = pages[index].canvasDocument.canvasSize
             if !current.matches(CanvasDocument.designCanvasSize) {
                 pages[index].canvasDocument.canvasSize = CanvasDocument.designCanvasSize
@@ -2762,6 +2795,9 @@ final class NotebookRepository: ObservableObject {
         }
 
         if changed {
+            for notebookID in Set(pages.map(\.notebookID)) {
+                rebuildSortIndexes(in: notebookID, saveAfterRebuild: false)
+            }
             save()
         }
     }

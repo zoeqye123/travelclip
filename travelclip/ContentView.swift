@@ -104,6 +104,10 @@ private struct HomeView: View {
     @State private var showingTemplateCenter = false
     @State private var showingQuickClip = false
 
+    private var newPageNotebookID: UUID {
+        repository.targetNotebookForNewPage().id
+    }
+
     var body: some View {
         ZStack(alignment: .bottom) {
             rootContent
@@ -151,7 +155,7 @@ private struct HomeView: View {
                 location: locationProvider.templateLocation,
                 mode: .createPage,
                 onTemplate: { template in
-                    let pageID = repository.createPage(in: nil, title: template.title, template: .blank, saveAfterCreate: false, draft: true)
+                    let pageID = repository.createPage(in: newPageNotebookID, title: template.title, template: .blank, saveAfterCreate: false, draft: true)
                     repository.applyTemplate(template, to: pageID)
                     showingTemplateCenter = false
                     path.append(.editor(pageID))
@@ -166,8 +170,9 @@ private struct HomeView: View {
         .sheet(isPresented: $showingQuickClip) {
             QuickClipSheet(
                 initialPlace: locationProvider.quickClipPlace,
+                notebook: repository.targetNotebookForNewPage(),
                 onCreate: { place, note, photoData in
-                    switch repository.createQuickClip(in: nil, place: place, note: note, photoData: photoData) {
+                    switch repository.createQuickClip(in: newPageNotebookID, place: place, note: note, photoData: photoData) {
                     case .success(let pageID):
                         showingQuickClip = false
                         path.append(.preview(pageID))
@@ -217,7 +222,7 @@ private struct HomeView: View {
                         showingQuickClip = true
                     },
                     onCreatePage: {
-                        repository.createPageAndOpen(in: nil, title: "New Page", template: .blank) { pageID in
+                        repository.createPageAndOpen(in: newPageNotebookID, title: "New Page", template: .blank) { pageID in
                             path.append(.editor(pageID))
                     }
                 },
@@ -249,7 +254,7 @@ private struct HomeView: View {
                         showingQuickClip = true
                     },
                     onCreatePage: {
-                        repository.createPageAndOpen(in: nil, title: "New Page", template: .blank) { pageID in
+                        repository.createPageAndOpen(in: newPageNotebookID, title: "New Page", template: .blank) { pageID in
                             path.append(.editor(pageID))
                         }
                     },
@@ -261,7 +266,7 @@ private struct HomeView: View {
                     repository: repository,
                     locationProvider: locationProvider,
                     onAddMaterial: { item in
-                        let pageID = repository.createPage(in: nil, title: locationProvider.pageTitle, template: .blank, saveAfterCreate: false, draft: true)
+                        let pageID = repository.createPage(in: newPageNotebookID, title: locationProvider.pageTitle, template: .blank, saveAfterCreate: false, draft: true)
                         switch repository.addMaterial(item, to: pageID, selectAfterInsert: false) {
                         case .success:
                             path.append(.editor(pageID))
@@ -270,7 +275,7 @@ private struct HomeView: View {
                         }
                     },
                     onAddSticker: { sticker in
-                        let pageID = repository.createPage(in: nil, title: locationProvider.pageTitle, template: .blank, saveAfterCreate: false, draft: true)
+                        let pageID = repository.createPage(in: newPageNotebookID, title: locationProvider.pageTitle, template: .blank, saveAfterCreate: false, draft: true)
                         repository.addSticker(sticker, to: pageID, selectAfterInsert: false)
                         path.append(.editor(pageID))
                     }
@@ -284,7 +289,7 @@ private struct HomeView: View {
     }
 
     private func createStorePage(_ action: StoreInsertAction) {
-        let pageID = repository.createPage(in: nil, title: "Store Page", template: .blank, saveAfterCreate: false, draft: true)
+        let pageID = repository.createPage(in: newPageNotebookID, title: "Store Page", template: .blank, saveAfterCreate: false, draft: true)
         switch action {
         case .material(let item):
             _ = repository.addMaterial(item, to: pageID, selectAfterInsert: false)
@@ -1231,10 +1236,15 @@ private struct PagePreviewView: View {
     @Binding var path: [TravelRoute]
     @State private var exportItem: ShareableExport?
     @State private var showingShare = false
+    @State private var pageMoveContext: PageNotebookMoveContext?
     @Environment(\.dismiss) private var dismiss
 
     private var page: JournalPage? {
         repository.page(id: pageID)
+    }
+
+    private var notebook: TravelNotebook? {
+        repository.notebook(for: pageID)
     }
 
     var body: some View {
@@ -1262,6 +1272,27 @@ private struct PagePreviewView: View {
                             Text(page.updatedAt.formatted(date: .abbreviated, time: .shortened))
                                 .font(.system(size: 12, weight: .medium, design: .rounded))
                                 .foregroundStyle(Color.inkSoft)
+
+                            TrackedEditorToolButton(componentID: "page.preview.notebook.move", disabled: false, action: {
+                                pageMoveContext = PageNotebookMoveContext(pageID: page.id)
+                            }) {
+                                HStack(spacing: 5) {
+                                    Image(systemName: notebook?.symbol ?? "book.closed")
+                                        .font(.system(size: 10, weight: .bold))
+                                    Text(notebook?.title ?? "Choose notebook")
+                                        .lineLimit(1)
+                                        .minimumScaleFactor(0.76)
+                                    Image(systemName: "chevron.down")
+                                        .font(.system(size: 8, weight: .bold))
+                                }
+                                .font(.system(size: 11, weight: .bold, design: .rounded))
+                                .foregroundStyle(Color.clay)
+                                .padding(.horizontal, 8)
+                                .frame(height: 24)
+                                .background(Color.paper.opacity(0.72))
+                                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                                .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).stroke(Color.lineSoft, lineWidth: 0.8))
+                            }
                         }
 
                         Spacer()
@@ -1347,6 +1378,21 @@ private struct PagePreviewView: View {
                 ShareSheet(items: [exportItem.item])
                     .presentationDetents([.medium])
             }
+        }
+        .sheet(item: $pageMoveContext) { context in
+            NotebookPickerSheet(
+                repository: repository,
+                currentNotebookID: page?.notebookID,
+                onSelect: { notebookID in
+                    repository.movePage(context.pageID, to: notebookID)
+                    pageMoveContext = nil
+                },
+                onCancel: {
+                    pageMoveContext = nil
+                }
+            )
+            .presentationDetents(EditorSheetSizing.addDetents)
+            .presentationDragIndicator(.visible)
         }
     }
 
@@ -10214,6 +10260,7 @@ private struct NewPageSheet: View {
 
 private struct QuickClipSheet: View {
     let initialPlace: String
+    let notebook: TravelNotebook
     let onCreate: (String, String, Data?) -> Void
     let onCancel: () -> Void
     @State private var place: String
@@ -10221,8 +10268,9 @@ private struct QuickClipSheet: View {
     @State private var selectedPhoto: PhotosPickerItem?
     @State private var photoData: Data?
 
-    init(initialPlace: String, onCreate: @escaping (String, String, Data?) -> Void, onCancel: @escaping () -> Void) {
+    init(initialPlace: String, notebook: TravelNotebook, onCreate: @escaping (String, String, Data?) -> Void, onCancel: @escaping () -> Void) {
         self.initialPlace = initialPlace
+        self.notebook = notebook
         self.onCreate = onCreate
         self.onCancel = onCancel
         _place = State(initialValue: initialPlace)
@@ -10238,6 +10286,33 @@ private struct QuickClipSheet: View {
         NavigationStack {
             ScrollView(showsIndicators: false) {
                 VStack(alignment: .leading, spacing: 18) {
+                    HStack(spacing: 10) {
+                        Image(systemName: notebook.symbol)
+                            .font(.system(size: 16, weight: .bold))
+                            .foregroundStyle(notebook.tint)
+                            .frame(width: 38, height: 38)
+                            .background(notebook.tint.opacity(0.16))
+                            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Saving to")
+                                .font(.system(size: 11, weight: .bold, design: .rounded))
+                                .foregroundStyle(Color.inkSoft)
+
+                            Text(notebook.title)
+                                .font(.system(size: 15, weight: .bold, design: .rounded))
+                                .foregroundStyle(Color.ink)
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.78)
+                        }
+
+                        Spacer(minLength: 0)
+                    }
+                    .padding(12)
+                    .background(Color.paper.opacity(0.82))
+                    .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Color.lineSoft, lineWidth: 1.1))
+
                     PhotosPicker(selection: $selectedPhoto, matching: .images) {
                         ZStack {
                             RoundedRectangle(cornerRadius: 18, style: .continuous)
