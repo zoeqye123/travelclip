@@ -205,11 +205,10 @@ private struct HomeView: View {
             UniverseRootTabView(
                 repository: repository,
                 locationProvider: locationProvider,
-                onInsert: { action in
-                    createStorePage(action)
-                },
-                onTemplates: {
-                    showingTemplateCenter = true
+                onTemplate: { template in
+                    let pageID = repository.createPage(in: newPageNotebookID, title: template.title, template: .blank, saveAfterCreate: false, draft: true)
+                    repository.applyTemplate(template, to: pageID)
+                    path.append(.editor(pageID))
                 }
             )
         case .my:
@@ -5980,110 +5979,67 @@ private struct MaterialStoreHomeView: View {
 private struct UniverseRootTabView: View {
     @ObservedObject var repository: NotebookRepository
     @ObservedObject var locationProvider: TravelLocationProvider
-    let onInsert: (StoreInsertAction) -> Void
-    let onTemplates: () -> Void
+    let onTemplate: (PageTemplateDefinition) -> Void
+    @AppStorage("travelclip.recentPageTemplateIDs") private var recentTemplateStorage = ""
+    @State private var selectedCategory: TemplateMarketCategory = .hot
+    @State private var query = ""
 
-    private var featuredGroups: [MaterialGroup] {
-        let locationTokens = ([locationProvider.searchedPlaceName, locationProvider.city, locationProvider.regionName, locationProvider.country])
-            .compactMap { $0 }
-            .flatMap(\.locationTokens)
+    private let columns = [
+        GridItem(.flexible(minimum: 0), spacing: 12),
+        GridItem(.flexible(minimum: 0), spacing: 12)
+    ]
 
-        let locationMatches = repository.materialGroups.filter { group in
-            let groupTokens = ([group.city, group.country, group.title] + group.tags).flatMap(\.locationTokens)
-            return locationTokens.contains { token in
-                groupTokens.contains { value in value == token || value.contains(token) || token.contains(value) }
-            }
-        }
-
-        let source = locationMatches.isEmpty ? repository.materialGroups : locationMatches
-        return Array(source.prefix(4))
+    private var recentTemplateIDs: [String] {
+        recentTemplateStorage
+            .split(separator: "|")
+            .map(String.init)
     }
 
-    private var spotlightItems: [MaterialItem] {
-        Array(featuredGroups.flatMap(\.items).prefix(12))
+    private var templates: [PageTemplateDefinition] {
+        let baseTemplates = repository.templateLibrary
+        let categoryFiltered: [PageTemplateDefinition]
+        switch selectedCategory {
+        case .hot:
+            categoryFiltered = PageTemplateLibrary.templates(matching: locationProvider.templateLocation, scope: .recommended)
+        case .my:
+            categoryFiltered = recentTemplateIDs.compactMap { id in
+                baseTemplates.first { $0.id == id }
+            }
+        case .plan:
+            categoryFiltered = baseTemplates.filter(\.isPlanTemplate)
+        case .route:
+            categoryFiltered = baseTemplates.filter(\.isRouteTemplate)
+        case .memory:
+            categoryFiltered = baseTemplates.filter(\.isMemoryTemplate)
+        case .city:
+            categoryFiltered = baseTemplates.filter(\.isCityTemplate)
+        case .all:
+            categoryFiltered = baseTemplates
+        }
+        return filter(categoryFiltered, matching: query)
     }
 
     private var universeSubtitle: String {
         let place = locationProvider.mapDisplayName
-        return place == "Pick a place" ? "Travel packs, local materials, and editable template ideas." : "Travel packs inspired by \(place)."
+        return place == "Pick a place" ? "Editable travel page templates from the community." : "Editable templates matched to \(place)."
+    }
+
+    private var resultSummary: String {
+        if selectedCategory == .my && recentTemplateIDs.isEmpty {
+            return "Recent templates appear after use"
+        }
+        let count = templates.count
+        return "\(count) \(count == 1 ? "template" : "templates")"
     }
 
     var body: some View {
         ScrollView(showsIndicators: false) {
-            VStack(alignment: .leading, spacing: 20) {
-                HStack(spacing: 10) {
-                    Image(systemName: "globe.asia.australia")
-                        .font(.system(size: 27, weight: .bold))
-                        .foregroundStyle(Color.clay)
-                        .frame(width: 54, height: 54)
-                        .background(Color.paper)
-                        .clipShape(RoundedRectangle(cornerRadius: 17, style: .continuous))
-                        .overlay(RoundedRectangle(cornerRadius: 17, style: .continuous).stroke(Color.lineSoft, lineWidth: 1.1))
-
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("Universe")
-                            .font(.system(size: 31, weight: .bold, design: .serif))
-                            .foregroundStyle(Color.ink)
-
-                        Text(universeSubtitle)
-                            .font(.system(size: 13, weight: .medium, design: .rounded))
-                            .foregroundStyle(Color.inkSoft)
-                            .lineLimit(2)
-                    }
-
-                    Spacer(minLength: 0)
-                }
-
-                if spotlightItems.isEmpty {
-                    emptyUniverse
-                } else {
-                    VStack(alignment: .leading, spacing: 12) {
-                        Text("Travel Picks")
-                            .sectionTitle()
-
-                        ScrollView(.horizontal, showsIndicators: false) {
-                            HStack(spacing: 12) {
-                                ForEach(spotlightItems) { item in
-                                    UniverseMaterialCard(item: item) {
-                                        onInsert(.material(item))
-                                    }
-                                }
-                            }
-                            .padding(.vertical, 2)
-                        }
-                    }
-                }
-
-                VStack(alignment: .leading, spacing: 12) {
-                    Text("City Packs")
-                        .sectionTitle()
-
-                    ForEach(featuredGroups) { group in
-                        UniversePackRow(group: group) { item in
-                            onInsert(.material(item))
-                        }
-                    }
-                }
-
-                VStack(alignment: .leading, spacing: 12) {
-                    Text("City Templates")
-                        .sectionTitle()
-
-                    TemplateEntryCard(locationName: locationProvider.mapDisplayName, action: onTemplates)
-                }
-
-                VStack(alignment: .leading, spacing: 12) {
-                    Text("Paper Styles")
-                        .sectionTitle()
-
-                    LazyVGrid(columns: StoreGrid.columns, spacing: 12) {
-                        ForEach(repository.backgroundLibrary.prefix(3)) { background in
-                            BackgroundChoiceCard(background: background, selected: false) {
-                                onInsert(.background(background))
-                            }
-                        }
-                    }
-                }
+            VStack(alignment: .leading, spacing: 14) {
+                universeHeader
+                categoryStrip
+                AssetSearchField(placeholder: "Search templates, city, tag", text: $query)
+                browserSummary
+                templateGrid
             }
             .padding(.horizontal, 18)
             .padding(.top, 10)
@@ -6091,23 +6047,210 @@ private struct UniverseRootTabView: View {
         }
     }
 
-    private var emptyUniverse: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Image(systemName: "sparkles")
-                .font(.system(size: 25, weight: .bold))
+    private var universeHeader: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "globe.asia.australia")
+                .font(.system(size: 27, weight: .bold))
                 .foregroundStyle(Color.clay)
-            Text("No travel packs found yet.")
-                .font(.system(size: 16, weight: .bold, design: .rounded))
+                .frame(width: 54, height: 54)
+                .background(Color.paper)
+                .clipShape(RoundedRectangle(cornerRadius: 17, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 17, style: .continuous).stroke(Color.lineSoft, lineWidth: 1.1))
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Universe")
+                    .font(.system(size: 31, weight: .bold, design: .serif))
+                    .foregroundStyle(Color.ink)
+
+                Text(universeSubtitle)
+                    .font(.system(size: 13, weight: .medium, design: .rounded))
+                    .foregroundStyle(Color.inkSoft)
+                    .lineLimit(2)
+            }
+
+            Spacer(minLength: 0)
+        }
+    }
+
+    private var categoryStrip: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                ForEach(TemplateMarketCategory.allCases) { category in
+                    TrackedEditorToolButton(componentID: "universe.template.category.\(category.rawValue)", disabled: false, action: {
+                        selectedCategory = category
+                    }) {
+                        Text(category.title)
+                            .font(.system(size: 14, weight: .bold, design: .rounded))
+                            .foregroundStyle(selectedCategory == category ? Color.paper : Color.inkSoft)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.75)
+                            .padding(.horizontal, 16)
+                            .frame(height: 44)
+                            .background(selectedCategory == category ? Color.clay : Color.paper.opacity(0.92))
+                            .clipShape(RoundedRectangle(cornerRadius: 13, style: .continuous))
+                            .overlay(RoundedRectangle(cornerRadius: 13, style: .continuous).stroke(selectedCategory == category ? Color.clay : Color.lineSoft, lineWidth: 1))
+                    }
+                }
+            }
+            .padding(.vertical, 2)
+        }
+    }
+
+    private var browserSummary: some View {
+        HStack(spacing: 8) {
+            Text(selectedCategory.title)
+                .font(.system(size: 19, weight: .bold, design: .serif))
                 .foregroundStyle(Color.ink)
-            Text("Templates and paper styles are still available below.")
+
+            Text(resultSummary)
+                .font(.system(size: 11, weight: .bold, design: .rounded))
+                .foregroundStyle(Color.inkSoft)
+                .lineLimit(1)
+
+            Spacer(minLength: 0)
+        }
+    }
+
+    @ViewBuilder
+    private var templateGrid: some View {
+        if templates.isEmpty {
+            ContentUnavailableView(
+                selectedCategory == .my ? "No recent templates" : "No templates found",
+                systemImage: selectedCategory == .my ? "clock" : "magnifyingglass",
+                description: Text(selectedCategory == .my ? "Use a template once to keep it here." : "Try All, Travel Record, Guangzhou, route, or photo.")
+            )
                 .font(.system(size: 13, weight: .medium, design: .rounded))
                 .foregroundStyle(Color.inkSoft)
+                .padding(.vertical, 28)
+        } else {
+            LazyVGrid(columns: columns, spacing: 12) {
+                ForEach(templates) { template in
+                    UniverseTemplateCard(template: template, imageURL: { repository.imageURL(for: $0) }) {
+                        useTemplate(template)
+                    }
+                }
+            }
         }
-        .padding(14)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.paper.opacity(0.86))
-        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(Color.lineSoft, lineWidth: 1))
+    }
+
+    private func filter(_ templates: [PageTemplateDefinition], matching query: String) -> [PageTemplateDefinition] {
+        let normalizedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !normalizedQuery.isEmpty else { return templates }
+        return templates.filter { template in
+            template.searchTokens.contains { $0.lowercased().contains(normalizedQuery) }
+        }
+    }
+
+    private func useTemplate(_ template: PageTemplateDefinition) {
+        var ids = recentTemplateIDs.filter { $0 != template.id }
+        ids.insert(template.id, at: 0)
+        recentTemplateStorage = ids.prefix(8).joined(separator: "|")
+        onTemplate(template)
+    }
+}
+
+private struct UniverseTemplateCard: View {
+    let template: PageTemplateDefinition
+    let imageURL: (String?) -> URL?
+    let action: () -> Void
+
+    var body: some View {
+        TrackedEditorToolButton(componentID: "universe.template.\(telemetryIDSegment(template.id))", disabled: false, action: action) {
+            VStack(alignment: .leading, spacing: 0) {
+                ZStack(alignment: .bottomTrailing) {
+                    CanvasTemplatePreview(template: template, imageURL: imageURL)
+                        .frame(maxWidth: .infinity)
+                        .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+                        .overlay(RoundedRectangle(cornerRadius: 9, style: .continuous).stroke(Color.lineSoft, lineWidth: 0.9))
+
+                    HStack(spacing: 4) {
+                        Image(systemName: "hand.thumbsup.fill")
+                            .font(.system(size: 11, weight: .bold))
+                        Text("\(likeCount)")
+                            .font(.system(size: 12, weight: .bold, design: .rounded))
+                    }
+                    .foregroundStyle(Color.paper)
+                    .padding(.horizontal, 8)
+                    .frame(height: 28)
+                    .background(Color.ink.opacity(0.72))
+                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    .padding(7)
+                }
+
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack(alignment: .firstTextBaseline, spacing: 6) {
+                        Text(template.title)
+                            .font(.system(size: 16, weight: .bold, design: .rounded))
+                            .foregroundStyle(Color.ink)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.72)
+
+                        Spacer(minLength: 0)
+
+                        Image(systemName: "star")
+                            .font(.system(size: 17, weight: .semibold))
+                            .foregroundStyle(Color.inkSoft)
+                    }
+
+                    HStack(spacing: 7) {
+                        ZStack {
+                            Circle()
+                                .fill(Color(hex: authorColorHex).opacity(0.18))
+                            Image(systemName: template.travelMomentIcon)
+                                .font(.system(size: 11, weight: .bold))
+                                .foregroundStyle(Color(hex: authorColorHex))
+                        }
+                        .frame(width: 24, height: 24)
+
+                        Text(authorName)
+                            .font(.system(size: 12, weight: .semibold, design: .rounded))
+                            .foregroundStyle(Color.inkSoft)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.75)
+
+                        Spacer(minLength: 0)
+                    }
+
+                    Text(template.templateOutcomeLabel)
+                        .font(.system(size: 10.5, weight: .semibold, design: .rounded))
+                        .foregroundStyle(Color.inkSoft)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.72)
+                }
+                .padding(10)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(Color.paper)
+            }
+            .background(Color.paper)
+            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(Color.lineSoft, lineWidth: 1.1))
+        }
+    }
+
+    private var likeCount: Int {
+        let seed = template.id.unicodeScalars.reduce(41) { partial, scalar in
+            partial &+ Int(scalar.value)
+        }
+        return 34 + abs(seed % 168)
+    }
+
+    private var authorName: String {
+        if let city = template.city, !city.isEmpty {
+            return "\(city) Studio"
+        }
+        switch template.travelMomentLabel {
+        case "Before": return "Trip Planner"
+        case "After": return "Memory Maker"
+        default: return "TravelClip"
+        }
+    }
+
+    private var authorColorHex: String {
+        switch template.travelMomentLabel {
+        case "Before": return "#9A6942"
+        case "After": return "#7C6C99"
+        default: return "#6F8E68"
+        }
     }
 }
 
