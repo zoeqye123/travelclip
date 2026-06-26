@@ -10,17 +10,6 @@ import SwiftUI
 import UIKit
 import UniformTypeIdentifiers
 
-private struct TapeGroupManifest: Decodable {
-    let displayName: String?
-    let tags: [String]?
-    let items: [String: TapeGroupItemManifest]?
-}
-
-private struct TapeGroupItemManifest: Decodable {
-    let title: String?
-    let tags: [String]?
-}
-
 private enum MaterialGroupScanner {
     static func scan() -> [MaterialGroup] {
         guard let resourceURL = Bundle.main.resourceURL else { return [] }
@@ -223,17 +212,15 @@ private enum TapeGroupScanner {
             guard (try? url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true else { continue }
             let imageURLs = imageFiles(in: url)
             guard !imageURLs.isEmpty else { continue }
-            let manifest = manifest(in: url)
             let relativeGroupID = url.path.replacingOccurrences(of: rootURL.path + "/", with: "")
             let groupID = relativeGroupID.replacingOccurrences(of: "/", with: "-")
-            let groupTags = manifest?.tags ?? tokens(from: relativeGroupID)
-            let title = manifest?.displayName ?? titleized(url.lastPathComponent)
+            let groupTags = tokens(from: relativeGroupID)
+            let title = titleized(url.lastPathComponent)
             let items = imageURLs.enumerated().map { offset, imageURL in
                 tapeDefinition(
                     imageURL: imageURL,
                     groupID: groupID,
                     groupTags: groupTags,
-                    itemManifest: manifest?.items?[imageURL.lastPathComponent],
                     offset: offset
                 )
             }
@@ -243,31 +230,24 @@ private enum TapeGroupScanner {
     }
 
     private static func scanFlattenedBundle(resourceURL: URL) -> [TapeGroup] {
-        let manifests = ((try? FileManager.default.contentsOfDirectory(at: resourceURL, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles])) ?? [])
-            .filter { $0.pathExtension.lowercased() == "json" && $0.lastPathComponent.lowercased().contains("tape") }
+        let images = imageFiles(in: resourceURL)
+        let grouped = Dictionary(grouping: images) { imageURL in
+            let stem = imageURL.deletingPathExtension().lastPathComponent
+            return stem.split(separator: "-", maxSplits: 1, omittingEmptySubsequences: true).first.map(String.init) ?? "tapes"
+        }
 
-        return manifests.compactMap { manifestURL in
-            guard let data = try? Data(contentsOf: manifestURL),
-                  let manifest = try? JSONDecoder().decode(TapeGroupManifest.self, from: data),
-                  let itemMap = manifest.items,
-                  !itemMap.isEmpty else { return nil }
-
-            let groupID = manifestURL.deletingPathExtension().lastPathComponent.replacingOccurrences(of: "-tapes", with: "")
-            let groupTags = manifest.tags ?? tokens(from: groupID)
-            let title = manifest.displayName ?? titleized(groupID)
-            let items = itemMap.keys.sorted().enumerated().compactMap { offset, fileName -> TapeDefinition? in
-                let fileURL = resourceURL.appendingPathComponent(fileName)
-                guard FileManager.default.fileExists(atPath: fileURL.path) else { return nil }
-                return tapeDefinition(
-                    imageURL: fileURL,
+        return grouped.compactMap { groupID, imageURLs in
+            let sortedImages = imageURLs.sorted { $0.lastPathComponent.localizedCaseInsensitiveCompare($1.lastPathComponent) == .orderedAscending }
+            let groupTags = tokens(from: groupID)
+            let title = titleized(groupID)
+            let items = sortedImages.enumerated().map { offset, imageURL in
+                tapeDefinition(
+                    imageURL: imageURL,
                     groupID: groupID,
                     groupTags: groupTags,
-                    itemManifest: itemMap[fileName],
                     offset: offset
                 )
             }
-
-            guard !items.isEmpty else { return nil }
             return TapeGroup(id: groupID, title: title, tags: groupTags, items: items)
         }
         .sorted { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }
@@ -277,7 +257,6 @@ private enum TapeGroupScanner {
         imageURL: URL,
         groupID: String,
         groupTags: [String],
-        itemManifest: TapeGroupItemManifest?,
         offset: Int
     ) -> TapeDefinition {
         let fileName = imageURL.lastPathComponent
@@ -286,10 +265,9 @@ private enum TapeGroupScanner {
         let aspect = max(imageSize.width / max(imageSize.height, 1), 1)
         let height = min(max(imageSize.height, 64), 110)
         let width = min(max(height * aspect * 1.7, 920), 1500)
-        let itemTags = (itemManifest?.tags ?? []) + groupTags + tokens(from: fileName)
         return TapeDefinition(
             id: "\(groupID)-\(fileName)-\(offset)",
-            title: itemManifest?.title ?? titleized(imageURL.deletingPathExtension().lastPathComponent),
+            title: titleized(imageURL.deletingPathExtension().lastPathComponent),
             groupID: groupID,
             fileName: fileName,
             fileURL: imageURL,
@@ -297,7 +275,7 @@ private enum TapeGroupScanner {
             width: width,
             height: height,
             rotation: 0,
-            tags: Array(Set(itemTags.map { $0.lowercased() })).sorted()
+            tags: Array(Set((groupTags + tokens(from: fileName)).map { $0.lowercased() })).sorted()
         )
     }
 
@@ -307,14 +285,6 @@ private enum TapeGroupScanner {
         return urls
             .filter { allowed.contains($0.pathExtension.lowercased()) }
             .sorted { $0.lastPathComponent.localizedCaseInsensitiveCompare($1.lastPathComponent) == .orderedAscending }
-    }
-
-    private static func manifest(in directory: URL) -> TapeGroupManifest? {
-        let jsonFiles = ((try? FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles])) ?? [])
-            .filter { $0.pathExtension.lowercased() == "json" && $0.lastPathComponent.lowercased().contains("tape") }
-        let candidates = jsonFiles + [directory.appendingPathComponent("tapes.json")]
-        guard let data = candidates.compactMap({ try? Data(contentsOf: $0) }).first else { return nil }
-        return try? JSONDecoder().decode(TapeGroupManifest.self, from: data)
     }
 
     private static func tokens(from value: String) -> [String] {
