@@ -129,7 +129,8 @@
 				"$(SRCROOT)/travelclip/NotebookRepository.swift",
 				"$(SRCROOT)/travelclip/PageTemplateApplier.swift",
 				"$(SRCROOT)/travelclip/PageTemplates.swift",
-				"$(SRCROOT)/travelclip/Resources/MaterialGroups/material-manifest.txt",
+				"$(SRCROOT)/travelclip/Resources/MaterialGroups",
+				"$(SRCROOT)/travelclip/Resources/TapeGroups",
 				"$(SRCROOT)/travelclip/TravelModels.swift",
 				"$(SRCROOT)/scripts/verify_canvas_contract.py",
 			);

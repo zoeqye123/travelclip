@@ -66,7 +66,8 @@ enum PageTemplateLibrary {
                 CanvasElement(kind: .sticker, symbol: "checkmark.seal.fill", x: 850, y: 1520, width: 96, height: 86, rotation: 12, zIndex: 19, colorHex: "#6F8E68"),
                 CanvasElement(kind: .shape, symbol: "rounded-rectangle", x: 535, y: 515, width: 670, height: 34, rotation: -1, zIndex: 20, opacity: 0.36, colorHex: "#D6B26D", cornerRadius: 10),
                 CanvasElement(kind: .text, text: "visa / charger / cash / offline address / rainy plan", x: 540, y: 523, width: 630, height: 50, rotation: -1, zIndex: 21, colorHex: "#6B523E", backgroundHex: "#F6E7C7", fontName: "Courier", fontSize: 24, textAlignment: "left")
-            ]
+            ],
+            accessLevel: .premium
         ),
         PageTemplateDefinition(
             id: "map-memory",
@@ -99,7 +100,8 @@ enum PageTemplateLibrary {
                 CanvasElement(kind: .text, text: "MAP SCRAPS", x: 258, y: 785, width: 210, height: 54, rotation: -7, zIndex: 22, colorHex: "#4B5A47", backgroundHex: "#F7E2BC", fontSize: 27, bold: true),
                 CanvasElement(kind: .shape, symbol: "rounded-rectangle", x: 520, y: 1020, width: 625, height: 30, rotation: -1, zIndex: 23, opacity: 0.35, colorHex: "#D6B66D", cornerRadius: 10),
                 CanvasElement(kind: .sticker, symbol: "flag.fill", x: 820, y: 915, width: 82, height: 76, rotation: 9, zIndex: 24, colorHex: "#B05F42")
-            ]
+            ],
+            accessLevel: .premium
         ),
         PageTemplateDefinition(
             id: "photo-stack",

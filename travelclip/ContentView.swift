@@ -23,12 +23,9 @@ struct ContentView: View {
     @StateObject private var authStore = LocalAuthStore()
     @State private var path: [TravelRoute] = []
     @State private var selectedRootTab: RootTab = .home
-    private let isAuthTemporarilyDisabled = true
-
     var body: some View {
         Group {
-            // TODO: Re-enable local auth before release.
-            if isAuthTemporarilyDisabled || authStore.isSignedIn {
+            if authStore.isSignedIn {
                 NavigationStack(path: $path) {
                     HomeView(
                         repository: repository,
@@ -62,6 +59,7 @@ struct ContentView: View {
                 selectedRootTab = .home
             }
         }
+        .environmentObject(authStore)
     }
 }
 
@@ -212,17 +210,17 @@ private struct HomeView: View {
                 }
             )
         case .my:
-                MyLibraryRootTabView(
-                    repository: repository,
-                    currentUser: authStore.currentUser,
-                    path: $path,
-                    showingNewNotebook: $showingNewNotebook,
-                    onQuickClip: {
-                        showingQuickClip = true
-                    },
-                    onCreatePage: {
-                        repository.createPageAndOpen(in: newPageNotebookID, title: "New Page", template: .blank) { pageID in
-                            path.append(.editor(pageID))
+            MyLibraryRootTabView(
+                repository: repository,
+                currentUser: authStore.currentUser,
+                path: $path,
+                showingNewNotebook: $showingNewNotebook,
+                onQuickClip: {
+                    showingQuickClip = true
+                },
+                onCreatePage: {
+                    repository.createPageAndOpen(in: newPageNotebookID, title: "New Page", template: .blank) { pageID in
+                        path.append(.editor(pageID))
                     }
                 },
                 onTemplatePage: {
@@ -230,7 +228,8 @@ private struct HomeView: View {
                 },
                 onSignOut: {
                     authStore.signOut()
-                }
+                },
+                authStore: authStore
             )
         }
     }
@@ -549,6 +548,7 @@ private struct LoginView: View {
     @State private var email = ""
     @State private var password = ""
     @State private var errorMessage: String?
+    @State private var isSubmitting = false
 
     private var primaryTitle: String {
         mode == .signIn ? "登录 TravelClip" : "创建账号"
@@ -602,10 +602,12 @@ private struct LoginView: View {
                                 .fixedSize(horizontal: false, vertical: true)
                         }
 
-                        TrackedEditorToolButton(componentID: "auth.submit.\(mode.rawValue)", disabled: false, action: submit) {
+                        TrackedEditorToolButton(componentID: "auth.submit.\(mode.rawValue)", disabled: isSubmitting, action: {
+                            Task { await submit() }
+                        }) {
                             HStack(spacing: 10) {
                                 Image(systemName: mode == .signIn ? "arrow.right.circle.fill" : "person.badge.plus")
-                                Text(primaryTitle)
+                                Text(isSubmitting ? "请稍候" : primaryTitle)
                             }
                             .font(.system(size: 16, weight: .bold, design: .rounded))
                             .foregroundStyle(Color.paper)
@@ -660,14 +662,16 @@ private struct LoginView: View {
         }
     }
 
-    private func submit() {
+    private func submit() async {
         errorMessage = nil
+        isSubmitting = true
+        defer { isSubmitting = false }
         let result: Result<Void, LocalAuthError>
         switch mode {
         case .signIn:
-            result = authStore.signIn(email: email, password: password)
+            result = await authStore.signIn(email: email, password: password)
         case .register:
-            result = authStore.register(displayName: displayName, email: email, password: password)
+            result = await authStore.register(displayName: displayName, email: email, password: password)
         }
 
         if case .failure(let error) = result {
@@ -5678,6 +5682,7 @@ private extension PageTemplateDefinition {
 private struct MaterialStoreHomeView: View {
     @ObservedObject var repository: NotebookRepository
     @ObservedObject var locationProvider: TravelLocationProvider
+    @EnvironmentObject var authStore: LocalAuthStore
     let onInsert: (StoreInsertAction) -> Void
     @State private var query = ""
     @State private var selectedCategory: StoreCategory = .materials
@@ -5877,7 +5882,7 @@ private struct MaterialStoreHomeView: View {
                 LazyVGrid(columns: StoreGrid.columns, spacing: 12) {
                     ForEach(filteredMaterialItems) { item in
                         MaterialItemCard(item: item) {
-                            onInsert(.material(item))
+                            useMaterial(item)
                         }
                     }
                 }
@@ -5905,7 +5910,7 @@ private struct MaterialStoreHomeView: View {
                 LazyVGrid(columns: StoreGrid.columns, spacing: 12) {
                     ForEach(stickerMaterialItems) { item in
                         MaterialItemCard(item: item) {
-                            onInsert(.material(item))
+                            useMaterial(item)
                         }
                     }
 
@@ -5954,6 +5959,18 @@ private struct MaterialStoreHomeView: View {
             .padding(.vertical, 28)
     }
 
+    private func useMaterial(_ item: MaterialItem) {
+        guard authStore.canUse(item.accessLevel) else {
+            Task {
+                if await authStore.claimAdUnlock(for: item.id) {
+                    onInsert(.material(item))
+                }
+            }
+            return
+        }
+        onInsert(.material(item))
+    }
+
     private func filteredMaterialItems(in items: [MaterialItem]) -> [MaterialItem] {
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         guard !trimmed.isEmpty else { return items }
@@ -5979,6 +5996,7 @@ private struct MaterialStoreHomeView: View {
 private struct UniverseRootTabView: View {
     @ObservedObject var repository: NotebookRepository
     @ObservedObject var locationProvider: TravelLocationProvider
+    @EnvironmentObject var authStore: LocalAuthStore
     let onTemplate: (PageTemplateDefinition) -> Void
     @AppStorage("travelclip.recentPageTemplateIDs") private var recentTemplateStorage = ""
     @State private var selectedCategory: TemplateMarketCategory = .hot
@@ -6142,10 +6160,23 @@ private struct UniverseRootTabView: View {
     }
 
     private func useTemplate(_ template: PageTemplateDefinition) {
+        guard authStore.canUse(template.accessLevel) else {
+            Task {
+                if await authStore.claimAdUnlock(for: template.id) {
+                    recordTemplateUse(template)
+                    onTemplate(template)
+                }
+            }
+            return
+        }
+        recordTemplateUse(template)
+        onTemplate(template)
+    }
+
+    private func recordTemplateUse(_ template: PageTemplateDefinition) {
         var ids = recentTemplateIDs.filter { $0 != template.id }
         ids.insert(template.id, at: 0)
         recentTemplateStorage = ids.prefix(8).joined(separator: "|")
-        onTemplate(template)
     }
 }
 
@@ -6648,6 +6679,7 @@ private enum TemplateMarketCategory: String, CaseIterable, Identifiable {
 
 private struct TemplateCenterView: View {
     @ObservedObject var repository: NotebookRepository
+    @EnvironmentObject var authStore: LocalAuthStore
     let location: TemplateLocation
     let mode: TemplateCenterMode
     let onTemplate: (PageTemplateDefinition) -> Void
@@ -6760,10 +6792,23 @@ private struct TemplateCenterView: View {
     }
 
     private func useTemplate(_ template: PageTemplateDefinition) {
+        guard authStore.canUse(template.accessLevel) else {
+            Task {
+                if await authStore.claimAdUnlock(for: template.id) {
+                    recordTemplateUse(template)
+                    onTemplate(template)
+                }
+            }
+            return
+        }
+        recordTemplateUse(template)
+        onTemplate(template)
+    }
+
+    private func recordTemplateUse(_ template: PageTemplateDefinition) {
         var ids = recentTemplateIDs.filter { $0 != template.id }
         ids.insert(template.id, at: 0)
         recentTemplateStorage = ids.prefix(8).joined(separator: "|")
-        onTemplate(template)
     }
 
     private var templateHeader: some View {
@@ -9491,10 +9536,8 @@ private struct TicketComposerSheet: View {
                         HStack(spacing: 10) {
                             ForEach(availableKinds, id: \.self) { kind in
                                 TrackedEditorToolButton(componentID: "sheet.ticket.kind.\(telemetryIDSegment(kind.rawValue))", disabled: false, action: {
-                                    selectedKind = kind
                                     if let template = templates.first(where: { $0.kind == kind }) {
-                                        selectedTemplateID = template.id
-                                        fields = template.fields
+                                        selectTemplate(template)
                                     }
                                     errorMessage = nil
                                 }) {
@@ -9520,9 +9563,7 @@ private struct TicketComposerSheet: View {
                         HStack(spacing: 10) {
                             ForEach(styleTemplates) { template in
                                 TrackedEditorToolButton(componentID: "sheet.ticket.template.\(telemetryIDSegment(template.id))", disabled: false, action: {
-                                    selectedTemplateID = template.id
-                                    selectedKind = template.kind
-                                    fields = template.fields
+                                    selectTemplate(template)
                                     errorMessage = nil
                                 }) {
                                     Text(template.title)
@@ -9574,6 +9615,26 @@ private struct TicketComposerSheet: View {
                 }
             }
         }
+    }
+
+    private func selectTemplate(_ template: TicketTemplateDefinition) {
+        let previousDefaults = selectedTemplate.fields
+        fields = mergedFields(current: fields, previousDefaults: previousDefaults, nextDefaults: template.fields)
+        selectedTemplateID = template.id
+        selectedKind = template.kind
+    }
+
+    private func mergedFields(current: TicketFields, previousDefaults: TicketFields, nextDefaults: TicketFields) -> TicketFields {
+        TicketFields(
+            origin: current.origin == previousDefaults.origin ? nextDefaults.origin : current.origin,
+            destination: current.destination == previousDefaults.destination ? nextDefaults.destination : current.destination,
+            date: current.date == previousDefaults.date ? nextDefaults.date : current.date,
+            time: current.time == previousDefaults.time ? nextDefaults.time : current.time,
+            seat: current.seat == previousDefaults.seat ? nextDefaults.seat : current.seat,
+            gate: current.gate == previousDefaults.gate ? nextDefaults.gate : current.gate,
+            className: current.className == previousDefaults.className ? nextDefaults.className : current.className,
+            reference: current.reference == previousDefaults.reference ? nextDefaults.reference : current.reference
+        )
     }
 
     private func ticketField(_ title: String, text: Binding<String>) -> some View {
@@ -11725,6 +11786,7 @@ private struct MyLibraryRootTabView: View {
     let onCreatePage: () -> Void
     let onTemplatePage: () -> Void
     let onSignOut: () -> Void
+    @ObservedObject var authStore: LocalAuthStore
 
     private let notebookColumns = [
         GridItem(.flexible(), spacing: 16),
@@ -11884,11 +11946,15 @@ private struct MyLibraryRootTabView: View {
                     .foregroundStyle(Color.inkSoft)
                     .lineLimit(1)
                     .minimumScaleFactor(0.72)
+
+                Text(authStore.entitlement.isPremium ? "Premium member" : "Free member")
+                    .font(.system(size: 10, weight: .bold, design: .rounded))
+                    .foregroundStyle(Color.clay)
+                    .lineLimit(1)
             }
 
             Spacer(minLength: 8)
 
-            /*
             TrackedEditorToolButton(componentID: "my.account.signOut", disabled: false, action: onSignOut) {
                 Image(systemName: "rectangle.portrait.and.arrow.right")
                     .font(.system(size: 17, weight: .bold))
@@ -11899,7 +11965,6 @@ private struct MyLibraryRootTabView: View {
                     .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(Color.lineSoft, lineWidth: 1))
             }
             .accessibilityLabel("Sign out")
-            */
         }
         .padding(12)
         .background(Color.paper.opacity(0.92))

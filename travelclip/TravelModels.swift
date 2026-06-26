@@ -5,6 +5,20 @@
 
 import SwiftUI
 
+enum AccessLevel: String, Codable {
+    case free
+    case premium
+}
+
+struct MembershipEntitlement: Codable, Equatable {
+    var isPremium: Bool
+    var tier: String?
+    var expiresAt: Date?
+    var source: String?
+
+    static let free = MembershipEntitlement(isPremium: false, tier: nil, expiresAt: nil, source: nil)
+}
+
 struct TravelNotebook: Identifiable, Codable {
     var id = UUID()
     var title: String
@@ -344,6 +358,7 @@ struct MaterialItem: Identifiable {
     let latitude: Double?
     let longitude: Double?
     let tags: [String]
+    let accessLevel: AccessLevel
 }
 
 struct TapeGroup: Identifiable {
@@ -364,6 +379,7 @@ struct TapeDefinition: Identifiable {
     let height: CGFloat
     let rotation: Double
     let tags: [String]
+    let accessLevel: AccessLevel
 
     init(
         id: String,
@@ -375,7 +391,8 @@ struct TapeDefinition: Identifiable {
         width: CGFloat,
         height: CGFloat,
         rotation: Double,
-        tags: [String] = []
+        tags: [String] = [],
+        accessLevel: AccessLevel = .free
     ) {
         self.id = id
         self.title = title
@@ -387,6 +404,7 @@ struct TapeDefinition: Identifiable {
         self.height = height
         self.rotation = rotation
         self.tags = tags
+        self.accessLevel = accessLevel
     }
 }
 
@@ -419,6 +437,31 @@ struct TicketFields: Codable, Equatable {
     var reference: String
 }
 
+enum TicketLayoutStyle: String, Codable {
+    case classic
+    case boardingPass
+    case baggageTag
+    case retroAir
+    case railPass
+    case localStub
+    case sleeperSlip
+    case pierPass
+    case cruiseStub
+    case islandTransfer
+    case cinemaStub
+    case admitOne
+    case festivalPass
+    case wristbandPass
+    case concertTicket
+    case museumEntry
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        let rawValue = (try? container.decode(String.self)) ?? Self.classic.rawValue
+        self = Self(rawValue: rawValue) ?? .classic
+    }
+}
+
 struct TicketTemplateDefinition: Identifiable, Codable {
     let id: String
     let kind: TicketKind
@@ -426,7 +469,56 @@ struct TicketTemplateDefinition: Identifiable, Codable {
     let headline: String
     let accentHex: String
     let paperHex: String
+    let layoutStyle: TicketLayoutStyle
     let fields: TicketFields
+    let accessLevel: AccessLevel
+
+    init(
+        id: String,
+        kind: TicketKind,
+        title: String,
+        headline: String,
+        accentHex: String,
+        paperHex: String,
+        layoutStyle: TicketLayoutStyle = .classic,
+        fields: TicketFields,
+        accessLevel: AccessLevel = .free
+    ) {
+        self.id = id
+        self.kind = kind
+        self.title = title
+        self.headline = headline
+        self.accentHex = accentHex
+        self.paperHex = paperHex
+        self.layoutStyle = layoutStyle
+        self.fields = fields
+        self.accessLevel = accessLevel
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case kind
+        case title
+        case headline
+        case accentHex
+        case paperHex
+        case layoutStyle
+        case fields
+        case accessLevel
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(String.self, forKey: .id)
+        kind = try container.decode(TicketKind.self, forKey: .kind)
+        title = try container.decode(String.self, forKey: .title)
+        headline = try container.decode(String.self, forKey: .headline)
+        accentHex = try container.decode(String.self, forKey: .accentHex)
+        paperHex = try container.decode(String.self, forKey: .paperHex)
+        layoutStyle = try container.decodeIfPresent(TicketLayoutStyle.self, forKey: .layoutStyle) ?? .classic
+        fields = try container.decode(TicketFields.self, forKey: .fields)
+        accessLevel = try container.decodeIfPresent(AccessLevel.self, forKey: .accessLevel) ?? .free
+    }
 }
 
 struct ShapeDefinition: Identifiable {
@@ -511,6 +603,7 @@ struct PageTemplateDefinition: Identifiable {
     let tags: [String]
     let background: CanvasBackground
     let elements: [CanvasElement]
+    let accessLevel: AccessLevel
 
     init(
         id: String,
@@ -520,7 +613,8 @@ struct PageTemplateDefinition: Identifiable {
         country: String? = nil,
         tags: [String] = [],
         background: CanvasBackground,
-        elements: [CanvasElement]
+        elements: [CanvasElement],
+        accessLevel: AccessLevel = .free
     ) {
         self.id = id
         self.title = title
@@ -530,6 +624,7 @@ struct PageTemplateDefinition: Identifiable {
         self.tags = tags
         self.background = background
         self.elements = elements
+        self.accessLevel = accessLevel
     }
 }
 

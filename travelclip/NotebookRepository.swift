@@ -66,7 +66,8 @@ private enum MaterialGroupScanner {
                     category: parsed.category,
                     latitude: parsed.latitude,
                     longitude: parsed.longitude,
-                    tags: Array(Set(itemTags.map { $0.lowercased() })).sorted()
+                    tags: Array(Set(itemTags.map { $0.lowercased() })).sorted(),
+                    accessLevel: parsed.category?.lowercased().contains("premium") == true ? .premium : .free
                 )
             }
 
@@ -104,7 +105,8 @@ private enum MaterialGroupScanner {
                     category: parsed.category,
                     latitude: parsed.latitude,
                     longitude: parsed.longitude,
-                    tags: Array(Set(itemTags.map { $0.lowercased() })).sorted()
+                    tags: Array(Set(itemTags.map { $0.lowercased() })).sorted(),
+                    accessLevel: parsed.category?.lowercased().contains("premium") == true ? .premium : .free
                 )
             }
 
@@ -353,8 +355,8 @@ final class NotebookRepository: ObservableObject {
 
     let tapeLibrary: [TapeDefinition] = [
         TapeDefinition(id: "kraft", title: "Kraft", colorHex: "#E0B56D", width: 760, height: 92, rotation: -3),
-        TapeDefinition(id: "sage", title: "Sage", colorHex: "#A8C8B6", width: 720, height: 88, rotation: 4),
-        TapeDefinition(id: "rose", title: "Rose", colorHex: "#D99A8C", width: 700, height: 86, rotation: -6),
+        TapeDefinition(id: "sage", title: "Sage", colorHex: "#A8C8B6", width: 720, height: 88, rotation: 4, accessLevel: .premium),
+        TapeDefinition(id: "rose", title: "Rose", colorHex: "#D99A8C", width: 700, height: 86, rotation: -6, accessLevel: .premium),
         TapeDefinition(id: "mist", title: "Mist", colorHex: "#9DB7D1", width: 740, height: 90, rotation: 5)
     ]
 
