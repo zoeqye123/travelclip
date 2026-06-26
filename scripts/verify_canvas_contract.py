@@ -15,6 +15,7 @@ PAGE_TEMPLATES = Path(os.environ.get("TRAVELCLIP_PAGE_TEMPLATES", ROOT / "travel
 PAGE_TEMPLATE_APPLIER = Path(os.environ.get("TRAVELCLIP_PAGE_TEMPLATE_APPLIER", ROOT / "travelclip" / "PageTemplateApplier.swift")).resolve()
 MATERIAL_GROUPS = Path(os.environ.get("TRAVELCLIP_MATERIAL_GROUPS", ROOT / "travelclip" / "Resources" / "MaterialGroups")).resolve()
 MATERIAL_MANIFEST = Path(os.environ.get("TRAVELCLIP_MATERIAL_MANIFEST", MATERIAL_GROUPS / "material-manifest.txt")).resolve()
+MATERIAL_IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp"}
 
 
 failures: list[str] = []
@@ -234,6 +235,59 @@ def count_templates_matching(template_blocks: list[tuple[str, str]], *tokens: st
         if any(token in tag_text for token in normalized_tokens):
             count += 1
     return count
+
+
+def material_image_files() -> list[Path]:
+    if os.environ.get("SCRIPT_INPUT_FILE_COUNT") and MATERIAL_MANIFEST.exists():
+        return [
+            MATERIAL_GROUPS / line.strip()
+            for line in MATERIAL_MANIFEST.read_text(encoding="utf-8").splitlines()
+            if line.strip() and not line.strip().startswith("#") and Path(line.strip()).suffix.lower() in MATERIAL_IMAGE_EXTENSIONS
+        ]
+
+    if not MATERIAL_GROUPS.exists():
+        return []
+    images = sorted(path for path in MATERIAL_GROUPS.rglob("*") if path.is_file() and path.suffix.lower() in MATERIAL_IMAGE_EXTENSIONS)
+    empty_images = [path.relative_to(MATERIAL_GROUPS).as_posix() for path in images if path.stat().st_size == 0]
+    for image in empty_images:
+        fail(f"Material image asset is empty: {image}")
+    return images
+
+
+def verify_global_common_materials(content: str) -> None:
+    images = material_image_files()
+    global_common_images: list[Path] = []
+    for path in images:
+        relative_path = path.relative_to(MATERIAL_GROUPS).as_posix().lower()
+        filename = path.name.lower()
+        is_global = relative_path.startswith("global/") or "country-global__" in filename
+        is_common_or_basic = (
+            "/common" in relative_path
+            or "/figma-basic/" in relative_path
+            or "/travel-basic/" in relative_path
+            or "__city-travel-basic__" in filename
+            or re.search(r"__cat-(?:common|basic|sticker|background)__", filename) is not None
+        )
+        if is_global and is_common_or_basic:
+            global_common_images.append(path)
+
+    group_ids = {
+        path.parent.relative_to(MATERIAL_GROUPS).as_posix()
+        for path in global_common_images
+    }
+    if not group_ids:
+        fail("Material Store must have at least one bundled global common/basic material group.")
+        return
+
+    if not any(path.name.lower().startswith("country-global__") for path in global_common_images):
+        fail("Global common/basic materials must use country-global filenames so they remain visible outside city context.")
+    if not any("__cat-sticker__" in path.name.lower() or "/travel-icons/" in path.as_posix().lower() for path in global_common_images):
+        fail("Global common/basic materials must keep at least one reusable travel icon or sticker.")
+    if not any("__cat-background__" in path.name.lower() for path in global_common_images):
+        fail("Global common/basic materials must keep at least one reusable background.")
+
+    require(r'MaterialCategoryOption\(id:\s*"common"', content, "Material Store must expose a Common category for global materials.")
+    require(r'item\.country\.locationKey\s*==\s*"global"', content, "Common material filtering must include country-global assets.")
 
 
 def verify_page_template_quality(page_templates: str, applier: str, content: str) -> None:
@@ -610,6 +664,7 @@ def main() -> None:
     require(r"toolButton\(\"storefront\",\s*\"Materials\",\s*action:\s*onMaterial\)", source, "Editor Materials tool must use a store icon and open material assets.")
     require(r"toolButton\(\"sparkles\",\s*\"Stickers\",\s*action:\s*onSticker\)", source, "Editor Stickers tool must be separate from Materials.")
     forbid(r"toolButton\(\"sparkles\",\s*\"Materials\",\s*action:\s*onSticker\)", source, "Editor Materials tool must not open the sticker action.")
+    verify_global_common_materials(source)
     require(r"MyLibraryRootTabView\(", source, "My root tab must render the local library screen.")
     require(r"componentID:\s*\"my\.page\.open\.", source, "My tab recent page rows must have stable telemetry component IDs.")
     require(r"componentID:\s*\"my\.notebook\.new\"", source, "My tab new notebook button must have telemetry.")
